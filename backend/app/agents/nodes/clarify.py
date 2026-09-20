@@ -40,7 +40,10 @@ async def clarify_node(state: AgentState) -> dict:
     }
     if result.needs_clarification:
         update["needs_action"] = "clarify"
+        # 文本走独立字段透出给前端（messages 里是 AIMessage，SSE 会排除不可序列化对象）
+        update["clarify_question"] = result.clarify_question
         update["messages"] = [AIMessage(result.clarify_question)]
     else:
         update["needs_action"] = "shopping"
+        update["clarify_question"] = ""
     return update

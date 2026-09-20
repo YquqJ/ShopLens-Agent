@@ -12,6 +12,9 @@ class RouteResult(BaseModel):
 
 _SYSTEM = "判断用户输入意图：想买东西/咨询商品选品比价=shopping；问候、闲聊、售后、无关内容=other。只输出 intent。"
 
+# 非导购兜底回复（同文本走 reply 字段透出前端，messages 不可序列化会被 SSE 排除）
+_REPLY = "我是导购助手，可帮你比价选品、下单。说说你的购物需求吧～"
+
 
 async def route_node(state: AgentState) -> dict:
     structured = get_llm(LIGHT_MODEL).with_structured_output(RouteResult)
@@ -19,7 +22,8 @@ async def route_node(state: AgentState) -> dict:
     result: RouteResult = await structured.ainvoke([
         SystemMessage(_SYSTEM), HumanMessage(latest),
     ])
-    update: dict = {"intent": result.intent}
+    update: dict = {"intent": result.intent, "reply": ""}
     if result.intent != "shopping":
-        update["messages"] = [AIMessage("我是导购助手，可帮你比价选品、下单。说说你的购物需求吧～")]
+        update["reply"] = _REPLY
+        update["messages"] = [AIMessage(_REPLY)]
     return update

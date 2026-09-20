@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.db.models import Conversation, Order
+from app.db.models import ConversionEvent, Conversation, Order
 from app.db.session import async_session_factory
 
 
@@ -45,6 +45,10 @@ async def place_order(draft: dict, thread_id: str) -> dict:
             status="placed",
         )
         session.add(order)
+        # 下单落库同写 order 转化事件（M8 转化漏斗归因）
+        session.add(ConversionEvent(
+            conversation_id=conversation_id, event_type="order", sku_id=draft["sku_id"]
+        ))
         await session.commit()
         await session.refresh(order)
         return {
