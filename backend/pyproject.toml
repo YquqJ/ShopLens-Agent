@@ -6,11 +6,15 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     # Agent 编排 + MCP 工具接入（SPEC 锁定，勿随意更换）
     "langgraph>=1.2",
+    "langgraph-checkpoint-postgres>=2.0",
     "langchain-mcp-adapters>=0.3",
     # FastMCP server（mcp.server.fastmcp，随官方 mcp SDK 提供）
     "mcp>=1.30",
     # Qwen（DashScope OpenAI 兼容）LLM 客户端
     "langchain-openai>=0.3",
+    # Web（FastAPI + uvicorn，SSE 流式）
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
     # 关系库（Postgres 异步，psycopg）
     "sqlalchemy[asyncio]>=2.0.35",
     "psycopg[binary]>=3.2.0",
