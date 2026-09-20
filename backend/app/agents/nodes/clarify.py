@@ -28,6 +28,18 @@ class ClarifyResult(BaseModel):
 _SYSTEM = "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/风格/材质/场景），拿不准的字段留空。关键信息=品类+预算，缺任一即 needs_clarification=True。"
 
 
+def _default_question(p: Preferences) -> str:
+    """LLM 未填问句时，按缺失的关键字段（品类/预算）确定性拼默认追问，避免空问句。"""
+    missing = []
+    if not p.category:
+        missing.append("想买什么品类（如项链、手链、戒指）")
+    if p.budget is None:
+        missing.append("预算大概多少")
+    if missing:
+        return "为了更精准地推荐，" + "、".join(missing) + "？"
+    return "能否再补充一下你的偏好？"
+
+
 async def clarify_node(state: AgentState) -> dict:
     structured = get_llm().with_structured_output(ClarifyResult)
     latest = state["messages"][-1].content if state["messages"] else ""
@@ -40,9 +52,11 @@ async def clarify_node(state: AgentState) -> dict:
     }
     if result.needs_clarification:
         update["needs_action"] = "clarify"
-        # 文本走独立字段透出给前端（messages 里是 AIMessage，SSE 会排除不可序列化对象）
-        update["clarify_question"] = result.clarify_question
-        update["messages"] = [AIMessage(result.clarify_question)]
+        # 文本走独立字段透出给前端（messages 里是 AIMessage，SSE 会排除不可序列化对象）；
+        # 实测 LLM 可能返回 needs_clarification=True 却留空问句，故空则回退确定性默认问句
+        question = result.clarify_question or _default_question(result.preferences)
+        update["clarify_question"] = question
+        update["messages"] = [AIMessage(question)]
     else:
         update["needs_action"] = "shopping"
         update["clarify_question"] = ""

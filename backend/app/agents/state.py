@@ -18,6 +18,8 @@ class AgentState(TypedDict):
     preferences: dict
     intent: str
     needs_action: str          # "" | "clarify" | "shopping"
+    clarify_question: str      # M8：澄清问句（独立序列化字段，供前端透出；messages 不含）
+    reply: str                 # M8：route 非导购兜底回复（独立序列化字段）
     candidates: list[dict]
     quotes: list[dict]
     normalized: list[dict]
@@ -37,6 +39,8 @@ def initial_state(message: str) -> AgentState:
         "preferences": {},
         "intent": "",
         "needs_action": "",
+        "clarify_question": "",
+        "reply": "",
         "candidates": [],
         "quotes": [],
         "normalized": [],
