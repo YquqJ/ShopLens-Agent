@@ -9,6 +9,8 @@ dependencies = [
     "langchain-mcp-adapters>=0.3",
     # FastMCP server（mcp.server.fastmcp，随官方 mcp SDK 提供）
     "mcp>=1.30",
+    # Qwen（DashScope OpenAI 兼容）LLM 客户端
+    "langchain-openai>=0.3",
     # 关系库（Postgres 异步，psycopg）
     "sqlalchemy[asyncio]>=2.0.35",
     "psycopg[binary]>=3.2.0",
