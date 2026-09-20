@@ -14,6 +14,8 @@ dependencies = [
     "pydantic-settings>=2.5.0",
     # 向量库（embedded 持久化，只做向量检索）
     "chromadb>=0.5.15",
+    # DashScope OpenAI 兼容客户端（embedding / LLM 共用）
+    "openai>=1.60",
 ]
 
 # 本目录是应用（非可分发库），依赖统一由 uv.lock 锁定

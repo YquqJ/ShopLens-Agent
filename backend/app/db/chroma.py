@@ -21,6 +21,8 @@ def get_client() -> chromadb.ClientAPI:
     return _client
 
 
-def get_collection(name: str) -> chromadb.Collection:
-    """按名取/建 collection；商品向量统一放 "products" 集合。"""
-    return get_client().get_or_create_collection(name=name)
+def get_collection(name: str, embedding_function=None) -> chromadb.Collection:
+    """按名取/建 collection；embedding_function 用于向量化（M1 起传入 text-embedding-v3）。"""
+    return get_client().get_or_create_collection(
+        name=name, embedding_function=embedding_function
+    )

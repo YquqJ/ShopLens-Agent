@@ -16,13 +16,17 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # 项目根 .env（与 .env.example 同位置），不随 CWD 变化
+        env_file=str(BASE_DIR.parent / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # DashScope（Qwen）OpenAI 兼容接入
     DASHSCOPE_API_KEY: str = ""
+
+    # DashScope OpenAI 兼容接口地址（embedding / LLM 共用）
+    DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     # Postgres 异步连接串（psycopg）
     DATABASE_URL: str = "postgresql+psycopg://shoplens:shoplens@localhost:5432/shoplens"
