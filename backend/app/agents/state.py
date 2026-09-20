@@ -10,6 +10,8 @@
 import operator
 from typing import Annotated, Any, TypedDict
 
+from langchain_core.messages import HumanMessage
+
 
 class AgentState(TypedDict):
     messages: Annotated[list[Any], operator.add]
@@ -22,4 +24,25 @@ class AgentState(TypedDict):
     recommendation: dict
     draft_order: dict | None
     order: dict | None
+    lock_attempts: int   # 下单前二次询价「涨价」重确认次数
+    price_raised: bool   # 最近一次二次询价是否涨价
     hop_count: int
+
+
+def initial_state(message: str) -> AgentState:
+    """构造初始状态（首轮用户消息 + 各字段默认值）。"""
+    return {
+        "messages": [HumanMessage(message)],
+        "preferences": {},
+        "intent": "",
+        "needs_action": "",
+        "candidates": [],
+        "quotes": [],
+        "normalized": [],
+        "recommendation": {},
+        "draft_order": None,
+        "order": None,
+        "lock_attempts": 0,
+        "price_raised": False,
+        "hop_count": 0,
+    }
