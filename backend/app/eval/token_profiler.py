@@ -1,18 +1,15 @@
-"""token 基线：固定会话集跑 clarify/route/recommend 三处 LLM 调用，统计 token。
+"""token 基线/改善对照：固定会话集跑 clarify/route/recommend 三处 LLM 调用，统计 token。
 
 设计决策：
-- M5 只落地「全量(full)」基线；「裁剪(trimmed)」是 M7 的目标，`--mode trimmed` 留占位，
-  避免提前实现裁剪（提前优化）。
-- 计数用 tiktoken cl100k_base 近似（DashScope/Qwen 官方分词器略有出入，但作为
-  「全量 vs 裁剪」的相对对比足够；输入侧由节点消息精确重建，输出侧用结构化结果的
-  model_dump json 近似）。
-- recommend 的上下文本该来自检索→比价→归一的真实产物，此处用固定候选 + 真实 MCP
-  报价归一出快照，保证 token 大小来自真实管线；数值不依赖 Chroma/Postgres。
+- M5 基线 ~755 tok/会话（全量：qwen-plus 三节点 + 字典 repr 全文上下文）；
+  M7 起实测「分层（clarify/route→qwen-turbo）+ 结构化裁剪（推荐上下文紧凑化）」后的数字，
+  与 M5 基线对比产出降幅；
+- 计数用 tiktoken cl100k_base 近似（Qwen 官方分词器略有出入，仅作相对对比）：
+  输入侧由节点消息精确重建，输出侧用结构化结果的 model_dump json 近似；
+- recommend 上下文来自固定候选 + 真实 MCP 报价归一的快照，不依赖 Chroma/Postgres。
 """
-import argparse
 import asyncio
 import json
-from pathlib import Path
 
 import tiktoken
 from langchain_core.messages import HumanMessage
@@ -38,6 +35,12 @@ SESSIONS = [
     "想买条项链送对象，3000以内，要复古风",
     "预算2500，买个浪漫一点的项链",
 ]
+
+# 代表性偏好（供「裁剪前/后」上下文 token 对照）
+SAMPLE_PREFS = {"category": "项链", "budget": 2000.0, "style": "简约"}
+
+# M5 全量基线（实测，用于对照）
+BASELINE_TOTAL = 755
 
 _enc = tiktoken.get_encoding("cl100k_base")
 _usage: list[dict] = []  # 每次 LLM 调用的 token 账本
@@ -83,19 +86,29 @@ class _CountedClient:
         return _CountedStructured(self._inner.with_structured_output(model, **kw))
 
 
-def _patch_nodes(real_llm) -> None:
-    """把三处节点模块的 get_llm 换成计数包装（节点调用 get_llm() 即被计数）。"""
-    clarify_mod.get_llm = lambda: _CountedClient(real_llm)
-    route_mod.get_llm = lambda: _CountedClient(real_llm)
-    recommend_mod.get_llm = lambda: _CountedClient(real_llm)
+def _make_counted(factory):
+    """把节点模块的 get_llm 替换为计数包装（透传 model 参数，保留分层）。"""
+
+    def counted(*args, **kwargs):
+        return _CountedClient(factory(*args, **kwargs))
+
+    return counted
+
+
+def _patch_nodes() -> None:
+    from app.agents import llm as llm_mod
+
+    clarify_mod.get_llm = _make_counted(llm_mod.get_llm)
+    route_mod.get_llm = _make_counted(llm_mod.get_llm)
+    recommend_mod.get_llm = _make_counted(llm_mod.get_llm)
 
 
 def _state(message: str) -> AgentState:
     return {
         "messages": [HumanMessage(message)],
         "preferences": {}, "intent": "", "needs_action": "",
-        "candidates": [], "quotes": [], "normalized": [], "recommendation": {},
-        "draft_order": None, "order": None,
+        "candidates": [], "quotes": [], "normalized": [], "degraded_sources": [],
+        "recommendation": {}, "draft_order": None, "order": None,
         "lock_attempts": 0, "price_raised": False, "hop_count": 0,
     }
 
@@ -109,38 +122,46 @@ async def _build_normalized(mcp_tools: dict) -> list[dict]:
     return (await normalize_node(state))["normalized"]
 
 
-async def profile_full(mcp_tools: dict) -> None:
-    from app.agents import llm as llm_mod
-
-    _patch_nodes(llm_mod.get_llm())
+async def profile_current(mcp_tools: dict) -> list[int]:
+    """跑当前（M7 分层+裁剪）管线，返回每会话合计 token。"""
+    _patch_nodes()
     normalized = await _build_normalized(mcp_tools)
-
+    totals = []
     for msg in SESSIONS:
         _usage.clear()
         state = _state(msg)
-        # clarify / route 只读最新消息，依次跑并计数
         await clarify_mod.clarify_node(state)
         await route_mod.route_node(state)
         state["normalized"] = normalized
         await recommend_mod.recommend_node(state)
         total_in = sum(u["input"] for u in _usage)
         total_out = sum(u["output"] for u in _usage)
+        totals.append(total_in + total_out)
         print(
             f"[{msg}] 调用 {len(_usage)} 次 → 输入 {total_in} tok / 输出 {total_out} tok "
             f"/ 合计 {total_in + total_out}"
         )
+    return totals
+
+
+def show_ctx_delta(normalized: list[dict]) -> None:
+    """结构化裁剪：同一快照下，推荐上下文「v0 全文 vs M7 紧凑」的输入 token 对照。"""
+    top = recommend_mod.select_top(normalized, SAMPLE_PREFS.get("budget"))
+    verbose = recommend_mod.build_user(SAMPLE_PREFS, top, [], compact=False)
+    compact = recommend_mod.build_user(SAMPLE_PREFS, top, [], compact=True)
+    v_tok = len(_enc.encode(verbose))
+    c_tok = len(_enc.encode(compact))
+    print(f"[裁剪对照] 推荐上下文输入 token：v0 全文 {v_tok} → M7 紧凑 {c_tok}（降 {(1 - c_tok / v_tok) * 100:.0f}%）")
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(description="token 基线")
-    parser.add_argument("--mode", choices=["full", "trimmed"], default="full")
-    args = parser.parse_args()
-    if args.mode == "trimmed":
-        print("trimmed 模式待 M7 落地（结构化裁剪），当前只测 full 基线")
-        return 2
-
     async with mcp_tools_ctx() as (mcp_tools, _registry):
-        await profile_full(mcp_tools)
+        normalized = await _build_normalized(mcp_tools)
+        show_ctx_delta(normalized)
+        totals = await profile_current(mcp_tools)
+        avg = sum(totals) / len(totals)
+        drop = (1 - avg / BASELINE_TOTAL) * 100
+        print(f"\n当前单次会话平均合计 {avg:.0f} tok（M5 全量基线 {BASELINE_TOTAL}）→ 降 {drop:.0f}%")
     return 0
 
 

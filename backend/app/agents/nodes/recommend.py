@@ -3,7 +3,9 @@
 设计决策：
 - 数值（sku_id/title/final_price/platform/attributes）一律从数据（normalized）取，
   只让 LLM 生成本文「理由/总结」，杜绝价格被 LLM 现编；
-- 有预算时先做非 LLM 过滤（best 到手价 ≤ 预算），选不出再退回全部，保证 ≥1 条。
+- 有预算时先做非 LLM 过滤（best 到手价 ≤ 预算），选不出再退回全部，保证 ≥1 条；
+- M7 结构化裁剪：喂给 LLM 的上下文从「字典 repr 全文」改为紧凑 key=value 摘要
+  （build_user(compact=True)），不喂 normalize 前的原始报价原文。
 """
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
@@ -27,31 +29,57 @@ class RecommendResult(BaseModel):
 _SYSTEM = "你是电商导购。基于给定候选商品数据，为每条写一句可溯源推荐理由（引用商品属性），并给一句总结。理由只描述、不编造价格数值。"
 
 
-async def recommend_node(state: AgentState) -> dict:
-    normalized = state.get("normalized", [])
-    # 预算过滤（非 LLM）：只保留 best 到手价在预算内的
-    budget = (state.get("preferences") or {}).get("budget")
+def select_top(normalized: list[dict], budget: float | None) -> list[dict]:
+    """非 LLM 预算过滤：best 到手价 ≤ 预算；无预算或过滤后为空则退回全部，取前 _TOP_N。"""
     pool = normalized
     if budget:
         within = [i for i in normalized if i["best"]["final_price"] <= budget]
         if within:
             pool = within
-    top = pool[:_TOP_N]
+    return pool[:_TOP_N]
 
-    ctx_lines = []
+
+def _fmt_attrs(attrs: dict) -> str:
+    """属性字典 → 紧凑「值/值」（裁剪用，省去键名与引号）。"""
+    return "/".join(str(v) for v in (attrs or {}).values())
+
+
+def _fmt_prefs(prefs: dict) -> str:
+    """偏好字典 → 紧凑「键=值」，跳过空字段（裁剪用）。"""
+    mapping = [("category", "品类"), ("budget", "预算"), ("style", "风格"),
+               ("material", "材质"), ("scene", "场景")]
+    parts = [f"{cn}={prefs[k]}" for k, cn in mapping if prefs.get(k) not in (None, "", [])]
+    return " ".join(parts) if parts else str(prefs)
+
+
+def build_user(prefs: dict, top: list[dict], degraded: list[str], *, compact: bool = True) -> str:
+    """拼推荐上下文人消息：compact=True 走裁剪（M7），False 走 v0 全文（对照）。"""
+    lines = []
     for item in top:
         b = item["best"]
-        ctx_lines.append(
-            f"- {item['sku_id']} {item['title']} 属性={item['attributes']} "
-            f"最优平台={b['platform']} 到手价={b['final_price']} 快递{b['eta_days']}天"
-        )
-    user = (
-        f"用户偏好={state.get('preferences')}\n候选：\n" + "\n".join(ctx_lines)
-    )
-    # 降级标注：某平台本次暂不可比，明确告知、不参与最优解
-    degraded = state.get("degraded_sources", [])
+        if compact:
+            lines.append(
+                f"- {item['sku_id']} {item['title']} {_fmt_attrs(item['attributes'])}"
+                f" | {b['platform']} {b['final_price']}元 {b['eta_days']}天"
+            )
+        else:
+            lines.append(
+                f"- {item['sku_id']} {item['title']} 属性={item['attributes']} "
+                f"最优平台={b['platform']} 到手价={b['final_price']} 快递{b['eta_days']}天"
+            )
+    head = f"偏好 {_fmt_prefs(prefs)}" if compact else f"用户偏好={prefs}"
+    user = f"{head}\n候选：\n" + "\n".join(lines)
     if degraded:
         user += "\n注：以下平台本次暂不可比（已降级，未参与最优解）：" + "、".join(degraded)
+    return user
+
+
+async def recommend_node(state: AgentState) -> dict:
+    normalized = state.get("normalized", [])
+    prefs = state.get("preferences") or {}
+    top = select_top(normalized, prefs.get("budget"))
+    user = build_user(prefs, top, state.get("degraded_sources", []), compact=True)
+
     structured = get_llm().with_structured_output(RecommendResult)
     res: RecommendResult = await structured.ainvoke([
         SystemMessage(_SYSTEM), HumanMessage(user),
