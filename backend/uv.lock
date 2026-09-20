@@ -1589,9 +1589,12 @@ dependencies = [
     { name = "langgraph-checkpoint-postgres" },
     { name = "mcp" },
     { name = "openai" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tenacity" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1605,9 +1608,12 @@ requires-dist = [
     { name = "langgraph-checkpoint-postgres", specifier = ">=2.0" },
     { name = "mcp", specifier = ">=1.30" },
     { name = "openai", specifier = ">=1.60" },
+    { name = "opentelemetry-api", specifier = ">=1.27" },
+    { name = "opentelemetry-sdk", specifier = ">=1.27" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "pydantic-settings", specifier = ">=2.5.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.35" },
+    { name = "tenacity", specifier = ">=8.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 

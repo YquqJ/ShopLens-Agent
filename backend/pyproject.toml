@@ -24,6 +24,10 @@ dependencies = [
     "chromadb>=0.5.15",
     # DashScope OpenAI 兼容客户端（embedding / LLM 共用）
     "openai>=1.60",
+    # 可靠性：重试/退避（tenacity）+ 观测（OpenTelemetry）
+    "tenacity>=8.3",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
 ]
 
 # 本目录是应用（非可分发库），依赖统一由 uv.lock 锁定
