@@ -5,8 +5,8 @@ description = "ShopLens 电商售前导购单 Agent（LangGraph + MCP 多源比�
 requires-python = ">=3.12,<3.13"
 dependencies = [
     # Agent 编排 + MCP 工具接入（SPEC 锁定，勿随意更换）
-    "langgraph>=0.2.60",
-    "langchain-mcp-adapters>=0.1.0",
+    "langgraph>=1.2",
+    "langchain-mcp-adapters>=0.3",
     # 关系库（Postgres 异步，psycopg）
     "sqlalchemy[asyncio]>=2.0.35",
     "psycopg[binary]>=3.2.0",
