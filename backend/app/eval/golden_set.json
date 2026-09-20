@@ -1,0 +1,84 @@
+{
+  "说明": "比价黄金集：手写 SKU×三平台报价，golden 为人工算好的最优解（最佳平台/到手价/综合成本）。规则判定的公式见 services/normalize.py：入手价 = 价 − 券(满 threshold 才减) + 运费；综合成本 = 到手价 + eta_days×TIME_VALUE_PER_DAY(10)。judge.py 用 normalize() 跑一遍，比对 golden，命中率 = 判定一致条目 / 总条目。",
+  "cases": [
+    {
+      "id": "g1_基本三源比价_pdd最便宜",
+      "candidates": [
+        {"sku_id": "SKU0001", "title": "简约 925银 项链", "category": "项链", "attributes": {"材质": "925银", "风格": "简约"}}
+      ],
+      "quotes": [
+        {"sku_id": "SKU0001", "platform": "jd", "price": 1000, "coupon": {"amount": 50, "threshold": 200}, "shipping_fee": 0, "eta_days": 1},
+        {"sku_id": "SKU0001", "platform": "taobao", "price": 980, "coupon": {"amount": 0, "threshold": 0}, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0001", "platform": "pdd", "price": 950, "coupon": {"amount": 100, "threshold": 900}, "shipping_fee": 0, "eta_days": 3}
+      ],
+      "golden": [{"sku_id": "SKU0001", "best_platform": "pdd", "final_price": 850, "total_cost": 880}]
+    },
+    {
+      "id": "g2_满减门槛未达_券失效_含无券平台",
+      "candidates": [
+        {"sku_id": "SKU0002", "title": "复古 玫瑰金 手链", "category": "手链", "attributes": {"材质": "玫瑰金", "风格": "复古"}}
+      ],
+      "quotes": [
+        {"sku_id": "SKU0002", "platform": "jd", "price": 500, "coupon": {"amount": 200, "threshold": 800}, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0002", "platform": "taobao", "price": 500, "coupon": {"amount": 30, "threshold": 400}, "shipping_fee": 0, "eta_days": 1},
+        {"sku_id": "SKU0002", "platform": "pdd", "price": 500, "coupon": null, "shipping_fee": 10, "eta_days": 3}
+      ],
+      "golden": [{"sku_id": "SKU0002", "best_platform": "taobao", "final_price": 470, "total_cost": 480}]
+    },
+    {
+      "id": "g3_运费计入到手价_标价低不必然胜",
+      "candidates": [
+        {"sku_id": "SKU0003", "title": "时尚 18K金 戒指", "category": "戒指", "attributes": {"材质": "18K金", "风格": "时尚"}}
+      ],
+      "quotes": [
+        {"sku_id": "SKU0003", "platform": "jd", "price": 1980, "coupon": {"amount": 100, "threshold": 1500}, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0003", "platform": "taobao", "price": 1950, "coupon": {"amount": 100, "threshold": 1500}, "shipping_fee": 40, "eta_days": 2},
+        {"sku_id": "SKU0003", "platform": "pdd", "price": 1930, "coupon": {"amount": 100, "threshold": 1500}, "shipping_fee": 0, "eta_days": 3}
+      ],
+      "golden": [{"sku_id": "SKU0003", "best_platform": "pdd", "final_price": 1830, "total_cost": 1860}]
+    },
+    {
+      "id": "g4_时效折算翻转_贵但快可胜便宜但慢",
+      "candidates": [
+        {"sku_id": "SKU0004", "title": "简约 黄金 耳环", "category": "耳环", "attributes": {"材质": "黄金", "风格": "简约"}}
+      ],
+      "quotes": [
+        {"sku_id": "SKU0004", "platform": "jd", "price": 1000, "coupon": null, "shipping_fee": 0, "eta_days": 1},
+        {"sku_id": "SKU0004", "platform": "taobao", "price": 1000, "coupon": null, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0004", "platform": "pdd", "price": 990, "coupon": null, "shipping_fee": 0, "eta_days": 5}
+      ],
+      "golden": [{"sku_id": "SKU0004", "best_platform": "jd", "final_price": 1000, "total_cost": 1010}]
+    },
+    {
+      "id": "g5_多SKU归一_各出其优_按综合成本排序",
+      "candidates": [
+        {"sku_id": "SKU0005", "title": "简约 925银 手链", "category": "手链", "attributes": {"材质": "925银", "风格": "简约"}},
+        {"sku_id": "SKU0006", "title": "浪漫 玫瑰金 项链", "category": "项链", "attributes": {"材质": "玫瑰金", "风格": "浪漫"}}
+      ],
+      "quotes": [
+        {"sku_id": "SKU0005", "platform": "jd", "price": 800, "coupon": null, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0005", "platform": "taobao", "price": 780, "coupon": null, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0005", "platform": "pdd", "price": 760, "coupon": null, "shipping_fee": 0, "eta_days": 3},
+        {"sku_id": "SKU0006", "platform": "jd", "price": 1600, "coupon": {"amount": 80, "threshold": 1500}, "shipping_fee": 0, "eta_days": 2},
+        {"sku_id": "SKU0006", "platform": "taobao", "price": 1580, "coupon": {"amount": 80, "threshold": 1500}, "shipping_fee": 0, "eta_days": 1},
+        {"sku_id": "SKU0006", "platform": "pdd", "price": 1560, "coupon": {"amount": 80, "threshold": 1500}, "shipping_fee": 10, "eta_days": 3}
+      ],
+      "golden": [
+        {"sku_id": "SKU0005", "best_platform": "pdd", "final_price": 760, "total_cost": 790},
+        {"sku_id": "SKU0006", "best_platform": "taobao", "final_price": 1500, "total_cost": 1510}
+      ]
+    },
+    {
+      "id": "g6_满减门槛刚好达到_边界应减",
+      "candidates": [
+        {"sku_id": "SKU0007", "title": "简约 铂金 胸针", "category": "胸针", "attributes": {"材质": "铂金", "风格": "简约"}}
+      ],
+      "quotes": [
+        {"sku_id": "SKU0007", "platform": "jd", "price": 1000, "coupon": {"amount": 50, "threshold": 1000}, "shipping_fee": 0, "eta_days": 1},
+        {"sku_id": "SKU0007", "platform": "taobao", "price": 990, "coupon": {"amount": 50, "threshold": 1000}, "shipping_fee": 0, "eta_days": 1},
+        {"sku_id": "SKU0007", "platform": "pdd", "price": 980, "coupon": null, "shipping_fee": 0, "eta_days": 1}
+      ],
+      "golden": [{"sku_id": "SKU0007", "best_platform": "jd", "final_price": 950, "total_cost": 960}]
+    }
+  ]
+}
