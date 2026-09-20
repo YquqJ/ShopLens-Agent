@@ -40,5 +40,10 @@ class Settings(BaseSettings):
         p = Path(self.CHROMA_DIR)
         return p if p.is_absolute() else BASE_DIR / p
 
+    @property
+    def postgres_dsn(self) -> str:
+        """psycopg 原生 DSN（langgraph-checkpoint-postgres 用），去掉 SQLAlchemy 方言前缀。"""
+        return self.DATABASE_URL.replace("+psycopg", "", 1)
+
 
 settings = Settings()
