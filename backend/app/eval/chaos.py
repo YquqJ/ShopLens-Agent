@@ -1,21 +1,19 @@
-"""chaos 基线：单源 100% 失败（故障注入），测源层出结果率 + 端到端完成率 + 延迟。
+"""chaos 基线/改善对照：单源 100% 失败（故障注入），测源层出结果率 + 端到端完成率 + 延迟 + 错误预算。
 
 两层：
 1) 源层：逐个 (sku, platform) 直调比价报价，统计「存活源」成功率与单次调用延迟——各源独立子进程，互不影响。
-2) 端到端：跑 compare→normalize（v0 无熔断/降级，一源挂则整节点抛错中断），统计完成率与耗时。
+2) 端到端：跑 compare→normalize（M6 起有熔断/降级），统计完成率与耗时。
 
-v0 预期（问题数字）：存活源源层 100% 出结果，但端到端完成率 0%（无隔离）——此落差即 M6 要修。
-    另有：单次 MCP 工具调用 ~530ms（stdio 逐次握手），比价 27 次调用端到端 ≈ 14s，远超 M6「P95<2.5s」目标。
-
-样本量：v0 单次调用就 ~0.5s，故源层每配置采样 2 遍、端到端 2 轮取均值，先立基线；
-     M6 优化吞吐后再上调样本量测稳定 P95。
+M6 改善对照（对比 v0 基线见 docs/RESUME.md）：
+- v0：单源失败 → 端到端完成率 0%（无隔离）；M6：单源失败 → 其余源端到端 100% 出结果。
+- 错误预算：存活源错误率零新增（失败源想隔离，不向其余源扩散）。
 """
 import asyncio
 import time
 
 from app.agents.nodes.compare import PRICE_TOOL, compare_node
 from app.agents.nodes.normalize import normalize_node
-from app.eval._harness import apply_loop_policy, build_mcp_tools
+from app.eval._harness import apply_loop_policy, mcp_tools_ctx
 
 # 固定候选（模拟 retrieve 召回，3 SKU）
 CANDIDATES = [
@@ -25,8 +23,9 @@ CANDIDATES = [
 ]
 
 PLATFORMS = ["jd", "taobao", "pdd"]
-_SRC_REPS = 2     # 源层每 (sku,平台) 采样遍数
-_E2E_TRIALS = 2   # 端到端每配置轮数（v0 太慢，均值即可立基线）
+HEALTHY_TRIALS = 20
+FAIL_TRIALS = 5
+_SRC_REPS = 2
 
 
 def _override(fail_source: str | None) -> dict[str, dict]:
@@ -64,16 +63,17 @@ async def _run_source_level(tools: dict, fail: str | None) -> tuple[int, int, li
     return ok, total, lat
 
 
-async def _run_e2e(tools: dict) -> tuple[int, list[float]]:
+async def _run_e2e(tools: dict, trials: int) -> tuple[int, list[float]]:
     """端到端跑 compare→normalize，返回 (完成次数, 各次耗时 ms)。"""
     ok = 0
     lat = []
     cfg = {"configurable": {"mcp_tools": tools}}
-    for _ in range(_E2E_TRIALS):
+    for _ in range(trials):
         state = {
             "messages": [], "preferences": {}, "intent": "", "needs_action": "",
             "candidates": CANDIDATES, "quotes": [], "normalized": [],
-            "recommendation": {}, "draft_order": None, "order": None,
+            "degraded_sources": [], "recommendation": {},
+            "draft_order": None, "order": None,
             "lock_attempts": 0, "price_raised": False, "hop_count": 0,
         }
         t0 = time.perf_counter()
@@ -89,17 +89,26 @@ async def _run_e2e(tools: dict) -> tuple[int, list[float]]:
 
 async def main() -> int:
     for fail in [None, "jd", "taobao", "pdd"]:
-        tools = await build_mcp_tools(_override(fail))
-        src_ok, src_tot, src_lat = await _run_source_level(tools, fail)
-        e2e_ok, e2e_lat = await _run_e2e(tools)
-        label = fail or "无故障(基线)"
-        src_rate = src_ok / src_tot * 100 if src_tot else 0.0
-        print(
-            f"[{label}] 存活源出结果率 {src_ok}/{src_tot} ({src_rate:.0f}%)"
-            f" 源调用P95 {_p95(src_lat):.0f}ms"
-            f" | 端到端完成率 {e2e_ok}/{_E2E_TRIALS} ({e2e_ok / _E2E_TRIALS * 100:.0f}%)"
-            f" 端到端均值 {_mean(e2e_lat):.0f}ms"
-        )
+        async with mcp_tools_ctx(_override(fail)) as (tools, registry):
+            trials = HEALTHY_TRIALS if fail is None else FAIL_TRIALS
+            src_ok, src_tot, src_lat = await _run_source_level(tools, fail)
+            e2e_ok, e2e_lat = await _run_e2e(tools, trials)
+            label = fail or "无故障(基线)"
+            src_rate = src_ok / src_tot * 100 if src_tot else 0.0
+            print(
+                f"[{label}] 存活源出结果率 {src_ok}/{src_tot} ({src_rate:.0f}%)"
+                f" 源调用P95 {_p95(src_lat):.0f}ms"
+                f" | 端到端完成率 {e2e_ok}/{trials} ({e2e_ok / trials * 100:.0f}%)"
+                f" 端到端均值 {_mean(e2e_lat):.0f}ms/P95 {_p95(e2e_lat):.0f}ms"
+            )
+            # 错误预算（存活源错误率应零新增）
+            for src in PLATFORMS:
+                b = registry.report().get(src)
+                if b:
+                    print(
+                        f"     {src}: 成功{b['success']} 失败{b['failure']} 熔断跳过{b['skipped']}"
+                        f" 错误率{b['error_rate']} 预算剩余{b['error_budget_remaining']}"
+                    )
     return 0
 
 

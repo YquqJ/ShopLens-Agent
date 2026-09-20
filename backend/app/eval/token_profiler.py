@@ -23,7 +23,7 @@ from app.agents.nodes import route as route_mod
 from app.agents.nodes.compare import compare_node
 from app.agents.nodes.normalize import normalize_node
 from app.agents.state import AgentState
-from app.eval._harness import apply_loop_policy, build_mcp_tools
+from app.eval._harness import apply_loop_policy, mcp_tools_ctx
 
 # 固定候选（模拟 retrieve 召回结果，3 条同品类 SKU）
 FIXTURE = [
@@ -139,8 +139,8 @@ async def main() -> int:
         print("trimmed 模式待 M7 落地（结构化裁剪），当前只测 full 基线")
         return 2
 
-    mcp_tools = await build_mcp_tools()
-    await profile_full(mcp_tools)
+    async with mcp_tools_ctx() as (mcp_tools, _registry):
+        await profile_full(mcp_tools)
     return 0
 
 
