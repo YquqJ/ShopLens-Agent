@@ -7,6 +7,8 @@ dependencies = [
     # Agent 编排 + MCP 工具接入（SPEC 锁定，勿随意更换）
     "langgraph>=1.2",
     "langchain-mcp-adapters>=0.3",
+    # FastMCP server（mcp.server.fastmcp，随官方 mcp SDK 提供）
+    "mcp>=1.30",
     # 关系库（Postgres 异步，psycopg）
     "sqlalchemy[asyncio]>=2.0.35",
     "psycopg[binary]>=3.2.0",
