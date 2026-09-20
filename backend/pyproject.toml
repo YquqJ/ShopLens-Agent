@@ -1,0 +1,21 @@
+[project]
+name = "shoplens-agent"
+version = "0.1.0"
+description = "ShopLens 电商售前导购单 Agent（LangGraph + MCP 多源比价）"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Agent 编排 + MCP 工具接入（SPEC 锁定，勿随意更换）
+    "langgraph>=0.2.60",
+    "langchain-mcp-adapters>=0.1.0",
+    # 关系库（Postgres 异步，psycopg）
+    "sqlalchemy[asyncio]>=2.0.35",
+    "psycopg[binary]>=3.2.0",
+    # 配置与类型
+    "pydantic-settings>=2.5.0",
+    # 向量库（embedded 持久化，只做向量检索）
+    "chromadb>=0.5.15",
+]
+
+# 本目录是应用（非可分发库），依赖统一由 uv.lock 锁定
+[tool.uv]
+package = false

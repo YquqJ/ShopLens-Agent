@@ -1,0 +1,39 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === 前端 / Node ===
+node_modules/
+frontend/dist/
+.vite/
+
+# === 环境与密钥 ===
+.env
+.env.*
+!.env.example
+
+# === 本地数据 & 运行产物 ===
+chroma/
+chroma_data/
+*.db
+*.sqlite3
+*.log
+
+# === 编辑器 / 系统 ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# === 非公开：开发/求职向文档与 AI 工具痕迹（避免暴露项目意图）===
+docs/
+.claude/
+CLAUDE.md
