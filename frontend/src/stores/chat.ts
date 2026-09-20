@@ -2,6 +2,7 @@
 //
 // 一轮导购 = 用户一句话 → POST /chat 返回整条 SSE 流（clarify→…→recommend→interrupt），
 // 前端把 node/interrupt/done/error 四类事件逐步落到当前 Turn 上，驱动消息气泡 + 比价表 + HITL + Trace 抽屉。
+import { reactive } from 'vue'
 import { defineStore } from 'pinia'
 import { chatStream, recordEvent, resumeStream } from '../api/client'
 import type {
@@ -59,7 +60,9 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
 }
 
 function newTurn(user: string): Turn {
-  return {
+  // 必须 reactive：sendMessage 手里攥着原始引用，后续 SSE 事件直接改它的字段，
+  // 若为普通对象会绕过 Vue Proxy 的 set 陷阱 → 数据更新但组件不重渲染（spinner 卡死）。
+  return reactive({
     id: crypto.randomUUID(),
     user,
     clarifyQuestion: '',
@@ -76,7 +79,7 @@ function newTurn(user: string): Turn {
     impressed: false,
     priceRaised: false,
     error: '',
-  }
+  })
 }
 
 function pushTrace(turn: Turn, name: string, status: TraceNode['status'], extra?: string): void {
