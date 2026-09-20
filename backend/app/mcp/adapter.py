@@ -9,9 +9,11 @@
 - overrides 传入某源 env 实现故障注入（如 SHOPLENS_FAILRATE_PDD=1）。
 """
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -41,3 +43,51 @@ def build_client(
             "env": overrides.get(name),  # None -> 继承默认环境
         }
     return MultiServerMCPClient(connections, tool_name_prefix=tool_name_prefix, handle_tool_errors=False)
+
+
+class MCPToolbox:
+    """一组「持久会话」上的 MCP 工具 + 会话关闭句柄。
+
+    get_tools() 返回的工具每次调用都会重开 session（stdio 下=每次 spawn 子进程 + MCP 握手，
+    单次 ~500ms）；改用 client.session(name) 常驻子进程，工具走会话 RPC 复用，单次降到毫秒级。
+    """
+
+    def __init__(self, tools: dict, stack: AsyncExitStack):
+        self.tools = tools
+        self._stack = stack
+
+    async def __aenter__(self) -> "MCPToolbox":
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self._stack.aclose()
+
+    async def aclose(self) -> None:
+        await self._stack.aclose()
+
+
+async def build_persistent_toolbox(
+    client: MultiServerMCPClient | None = None,
+    *,
+    overrides: dict[str, dict] | None = None,
+    tool_name_prefix: bool = True,
+) -> MCPToolbox:
+    """为每个 server 建常驻 session，把工具装载到 session 上（复用连接，不重复握手）。
+
+    overrides 同 build_client（按 server 名覆盖 env，故障注入）；handle_tool_errors=False
+    保证源故障以异常上抛（供 infra/protect.py 的熔断器捕获），而非吞成字符串。
+    """
+    client = client or build_client(overrides=overrides, tool_name_prefix=tool_name_prefix)
+    stack = AsyncExitStack()
+    tools: dict = {}
+    for name in SERVERS:
+        session = await stack.enter_async_context(client.session(name))
+        loaded = await load_mcp_tools(
+            session,
+            server_name=name,
+            tool_name_prefix=tool_name_prefix,
+            handle_tool_errors=False,
+        )
+        for t in loaded:
+            tools[t.name] = t
+    return MCPToolbox(tools, stack)

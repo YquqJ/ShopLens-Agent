@@ -48,6 +48,10 @@ async def recommend_node(state: AgentState) -> dict:
     user = (
         f"用户偏好={state.get('preferences')}\n候选：\n" + "\n".join(ctx_lines)
     )
+    # 降级标注：某平台本次暂不可比，明确告知、不参与最优解
+    degraded = state.get("degraded_sources", [])
+    if degraded:
+        user += "\n注：以下平台本次暂不可比（已降级，未参与最优解）：" + "、".join(degraded)
     structured = get_llm().with_structured_output(RecommendResult)
     res: RecommendResult = await structured.ainvoke([
         SystemMessage(_SYSTEM), HumanMessage(user),
@@ -68,4 +72,4 @@ async def recommend_node(state: AgentState) -> dict:
             "attributes": item["attributes"],      # 数值取数据
             "reason": r.reason,                     # 文本取 LLM（挂属性，可溯源）
         })
-    return {"recommendation": {"summary": res.summary, "items": items}}
+    return {"recommendation": {"summary": res.summary, "items": items, "degraded_sources": state.get("degraded_sources", [])}}

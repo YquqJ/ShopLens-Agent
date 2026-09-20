@@ -21,6 +21,7 @@ class AgentState(TypedDict):
     candidates: list[dict]
     quotes: list[dict]
     normalized: list[dict]
+    degraded_sources: list[str]   # M6：本次比价中熔断/失败的平台（"暂不可比"，供推荐透出）
     recommendation: dict
     draft_order: dict | None
     order: dict | None
@@ -39,6 +40,7 @@ def initial_state(message: str) -> AgentState:
         "candidates": [],
         "quotes": [],
         "normalized": [],
+        "degraded_sources": [],
         "recommendation": {},
         "draft_order": None,
         "order": None,
