@@ -26,6 +26,8 @@ class ChatRequest(BaseModel):
 class ResumeRequest(BaseModel):
     thread_id: str
     confirm: bool
+    sku_id: str | None = None      # 方案 B：用户在候选间选择（可选）
+    platform: str | None = None    # 方案 B：用户在平台间选择（可选）
 
 
 def _sse(event: str, data: dict) -> str:
@@ -78,8 +80,14 @@ async def resume(req: ResumeRequest, request: Request) -> StreamingResponse:
     cfg = _make_cfg(request, req.thread_id)
 
     async def gen() -> AsyncGenerator[str, None]:
+        # resume 载荷：confirm + 可选候选/平台选择；空字段不传给 interrupt
+        resume: dict = {"confirm": req.confirm}
+        if req.sku_id:
+            resume["sku_id"] = req.sku_id
+        if req.platform:
+            resume["platform"] = req.platform
         try:
-            async for chunk in _stream(graph, cfg, Command(resume={"confirm": req.confirm}), is_resume=True):
+            async for chunk in _stream(graph, cfg, Command(resume=resume), is_resume=True):
                 yield chunk
         except Exception as e:  # noqa: BLE001
             yield _sse("error", {"message": str(e)})

@@ -18,7 +18,7 @@ import json
 import random
 
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
-from sqlalchemy import delete, select
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.core.loop import install_selector_event_loop_policy
@@ -55,7 +55,7 @@ CATALOG_SPECS: list[tuple[str, dict[str, list[str]], float]] = [
 ]
 
 
-def build_seed_products(count: int = 100) -> list[dict]:
+def build_seed_products(count: int = 200) -> list[dict]:
     """确定性生成 count 条 SKU（固定随机种子，价格/库存可复现）。"""
     rng = random.Random(42)
     products: list[dict] = []
@@ -90,13 +90,14 @@ def build_embedding_fn() -> OpenAIEmbeddingFunction:
     )
 
 
-async def seed(count: int = 100) -> int:
+async def seed(count: int = 200) -> int:
     """SKU 全量写入 Postgres + 向量化进 Chroma（幂等重灌），返回 SKU 数。"""
     products = build_seed_products(count)
 
     # 1) Postgres：清空重灌商品主数据（价格/库存唯一事实来源）
+    #    TRUNCATE RESTART IDENTITY 重置自增序列，让 id 每次从 1 重新编号（DELETE 不会重置）
     async with async_session_factory() as session:
-        await session.execute(delete(Product))
+        await session.execute(text("TRUNCATE TABLE products RESTART IDENTITY"))
         session.add_all(Product(**p) for p in products)
         await session.commit()
 

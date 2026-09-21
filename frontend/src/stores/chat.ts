@@ -127,13 +127,13 @@ export const useChatStore = defineStore('chat', {
       if (session.turns.length === 1) session.title = text.slice(0, 18)
       await this.run(turn, () => chatStream(session.id, text, (ev) => this.handleEvent(session, turn, ev)))
     },
-    async resumeHitl(turnId: string, confirm: boolean): Promise<void> {
+    async resumeHitl(turnId: string, confirm: boolean, skuId?: string, platform?: string): Promise<void> {
       const session = this.activeSession
       const turn = session.turns.find((t) => t.id === turnId)
       if (!turn) return
       turn.awaitingHitl = false
       turn.streaming = true
-      await this.run(turn, () => resumeStream(session.id, confirm, (ev) => this.handleEvent(session, turn, ev)))
+      await this.run(turn, () => resumeStream(session.id, confirm, (ev) => this.handleEvent(session, turn, ev), skuId, platform))
     },
     trackClick(skuId: string): void {
       void recordEvent(this.activeId, 'click', skuId)

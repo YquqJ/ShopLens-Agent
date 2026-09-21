@@ -56,8 +56,10 @@ export function resumeStream(
   threadId: string,
   confirm: boolean,
   onEvent: (ev: SSEEvent) => void,
+  skuId?: string,
+  platform?: string,
 ): Promise<void> {
-  return postSSE('/api/resume', { thread_id: threadId, confirm }, onEvent)
+  return postSSE('/api/resume', { thread_id: threadId, confirm, sku_id: skuId, platform }, onEvent)
 }
 
 export async function recordEvent(

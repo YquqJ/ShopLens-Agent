@@ -2,39 +2,68 @@
 
 设计决策：
 - 用 LangGraph interrupt 做下单确认的「人在回路」，checkpointer 负责断点持久化；
-- 涨价重确认时（lock_attempts>0）复用锁价节点更新过的 draft，而非重取原始报价；
-- resume 值为 {"confirm": bool}，取消则 draft_order 置 None 走 END。
+- 方案 B：用户在候选(sku_id)/平台(platform)间做选择，confirm 按选择重建 draft；
+  仅首轮确认应用选择；涨价重确认（lock_attempts>0）保留锁价后的 draft，不再重建；
+- resume 值为 {"confirm": bool, "sku_id"?: str, "platform"?: str}，取消则 draft_order 置 None 走 END。
 """
 from langgraph.types import interrupt
 
 from app.agents.state import AgentState
 
 
-def _build_draft(item: dict) -> dict:
-    b = item["best"]
+def _draft(item: dict, quote: dict) -> dict:
+    """由候选 item + 指定平台 quote 组装草稿订单（数值全部取自数据）。"""
     return {
         "sku_id": item["sku_id"],
         "title": item["title"],
-        "platform": b["platform"],
-        "price": b["price"],
-        "discount": b["discount"],
-        "shipping_fee": b["shipping_fee"],
-        "eta_days": b["eta_days"],
-        "final_price": b["final_price"],
+        "platform": quote["platform"],
+        "price": quote["price"],
+        "discount": quote["discount"],
+        "shipping_fee": quote["shipping_fee"],
+        "eta_days": quote["eta_days"],
+        "final_price": quote["final_price"],
     }
+
+
+def _build_draft(item: dict) -> dict:
+    """默认草稿：取该候选的综合最优解（best）。"""
+    return _draft(item, item["best"])
+
+
+def _resolve_selection(normalized: list[dict], decision: dict) -> dict | None:
+    """按用户的候选/平台选择重建 draft；选择不合法（sku 或 platform 不存在）返回 None。"""
+    sku_id = decision.get("sku_id")
+    if not sku_id:
+        return None
+    item = next((n for n in normalized if n["sku_id"] == sku_id), None)
+    if item is None:
+        return None
+    platform = decision.get("platform")
+    if platform:
+        quote = next((q for q in item.get("quotes", []) if q["platform"] == platform), None)
+        if quote is None:
+            return None
+        return _draft(item, quote)
+    return _build_draft(item)
 
 
 async def confirm_node(state: AgentState) -> dict:
     normalized = state.get("normalized", [])
     if not normalized:
         return {"draft_order": None, "order": {"status": "skipped"}}
-    if state.get("lock_attempts", 0) > 0 and state.get("draft_order"):
-        draft = state["draft_order"]          # 涨价后重确认，用已更新价
+    re_confirm = state.get("lock_attempts", 0) > 0 and bool(state.get("draft_order"))
+    if re_confirm:
+        draft = state["draft_order"]          # 涨价重确认：用锁价后的最新价
     else:
-        draft = _build_draft(normalized[0])    # v0：选归一后最优解第一条
+        draft = _build_draft(normalized[0])    # 默认：归一后最优解第一条
 
     decision = interrupt({"type": "confirm_order", "draft_order": draft})
     confirm = decision.get("confirm") if isinstance(decision, dict) else bool(decision)
     if not confirm:
         return {"draft_order": None, "order": {"status": "cancelled"}}
+    # 方案 B：仅首轮确认应用「候选/平台选择」，重确认保留锁定价
+    if not re_confirm and isinstance(decision, dict):
+        selected = _resolve_selection(normalized, decision)
+        if selected is not None:
+            draft = selected
     return {"draft_order": draft, "order": {"status": "confirmed"}}

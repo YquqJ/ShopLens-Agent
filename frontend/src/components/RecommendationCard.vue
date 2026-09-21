@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import type { Turn } from '../stores/chat'
-import type { NormalizedItem, RecommendItem } from '../api/types'
+import type { NormalizedItem, Quote, RecommendItem } from '../api/types'
 
 const props = defineProps<{ turn: Turn }>()
 const store = useChatStore()
@@ -43,6 +43,33 @@ const topNormalized = computed(() => {
 
 const degradedList = computed(() => props.turn.degradedSources)
 
+// 方案 B：HITL 候选商品 / 平台选择（默认首项 + 其最优解）
+const selectedSkuId = ref(rec.value.items[0]?.sku_id ?? '')
+const selectedPlatform = ref(bySku.value[rec.value.items[0]?.sku_id ?? '']?.best?.platform ?? '')
+const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value) ?? rec.value.items[0])
+const selectedQuotes = computed<Quote[]>(() => bySku.value[selectedSkuId.value]?.quotes ?? [])
+const selectedBest = computed(() => bySku.value[selectedSkuId.value]?.best?.platform ?? '')
+const selectedQuote = computed<Quote | null>(
+  () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
+)
+function onSkuChange(): void {
+  // 切换商品后，平台回落到该商品的最优解
+  selectedPlatform.value = selectedBest.value
+}
+
+interface HitlSummary { title: string; platform: string; final_price: number; eta_days: number }
+// 首轮用所选候选/平台的报价；涨价重确认用锁价后的 draft
+const summary = computed<HitlSummary | null>(() => {
+  if (props.turn.priceRaised && props.turn.draftOrder) {
+    const d = props.turn.draftOrder
+    return { title: d.title, platform: d.platform, final_price: d.final_price, eta_days: d.eta_days }
+  }
+  const q = selectedQuote.value
+  const it = selectedItem.value
+  if (q && it) return { title: it.title, platform: q.platform, final_price: q.final_price, eta_days: q.eta_days }
+  return null
+})
+
 function origPrice(item: RecommendItem): number | null {
   const b = bySku.value[item.sku_id]?.best
   if (!b || b.price === b.final_price) return null
@@ -50,7 +77,7 @@ function origPrice(item: RecommendItem): number | null {
 }
 
 async function confirm(): Promise<void> {
-  await store.resumeHitl(props.turn.id, true)
+  await store.resumeHitl(props.turn.id, true, selectedSkuId.value, selectedPlatform.value)
 }
 async function cancel(): Promise<void> {
   await store.resumeHitl(props.turn.id, false)
@@ -146,12 +173,31 @@ async function cancel(): Promise<void> {
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
         下单确认 · 人工确认（HITL）
       </h3>
-      <p>草稿订单需你确认后才真正下单，下单前会二次询价锁定价格。</p>
-      <div class="order-summary">
-        <div class="order-line"><span>{{ turn.draftOrder.title }} ×1</span><span>{{ fmt(turn.draftOrder.final_price) }}</span></div>
-        <div class="order-line"><span>平台</span><span>{{ platName(turn.draftOrder.platform) }}</span></div>
-        <div class="order-line"><span>快递时效</span><span>{{ turn.draftOrder.eta_days }} 天</span></div>
-        <div class="order-line total"><span>应付合计</span><span>{{ fmt(turn.draftOrder.final_price) }}</span></div>
+      <p>可切换候选商品与购买平台，确认后下单前会二次询价锁定价格。</p>
+
+      <!-- 方案 B：候选商品 / 平台选择（仅首轮，涨价重确认时隐藏） -->
+      <div v-if="!turn.priceRaised" style="margin:14px 20px 0;display:grid;gap:8px">
+        <label style="display:grid;grid-template-columns:36px 1fr;align-items:center;gap:10px;font-size:13px;color:#A8A29E">
+          <span>商品</span>
+          <select v-model="selectedSkuId" @change="onSkuChange" style="background:#292524;color:#FAFAF9;border:1px solid #44403C;border-radius:8px;padding:8px 10px;font-size:13px">
+            <option v-for="it in rec.items" :key="it.sku_id" :value="it.sku_id">{{ it.title }}</option>
+          </select>
+        </label>
+        <label style="display:grid;grid-template-columns:36px 1fr;align-items:center;gap:10px;font-size:13px;color:#A8A29E">
+          <span>平台</span>
+          <select v-model="selectedPlatform" style="background:#292524;color:#FAFAF9;border:1px solid #44403C;border-radius:8px;padding:8px 10px;font-size:13px">
+            <option v-for="q in selectedQuotes" :key="q.platform" :value="q.platform">
+              {{ platName(q.platform) }} · 到手 {{ fmt(q.final_price) }}{{ q.platform === selectedBest ? '（最优）' : '' }}
+            </option>
+          </select>
+        </label>
+      </div>
+
+      <div v-if="summary" class="order-summary">
+        <div class="order-line"><span>{{ summary.title }} ×1</span><span>{{ fmt(summary.final_price) }}</span></div>
+        <div class="order-line"><span>平台</span><span>{{ platName(summary.platform) }}</span></div>
+        <div class="order-line"><span>快递时效</span><span>{{ summary.eta_days }} 天</span></div>
+        <div class="order-line total"><span>应付合计</span><span>{{ fmt(summary.final_price) }}</span></div>
       </div>
       <div v-if="turn.priceRaised && turn.order?.status !== 'placed'" class="lock-note show">二次询价发现价格变动，请确认最新到手价后再下单。</div>
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
