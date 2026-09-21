@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { fetchFunnel } from '../api/client'
 import type { FunnelStats } from '../api/types'
+
+const props = defineProps<{ active: boolean }>()
 
 const stats = ref<FunnelStats | null>(null)
 const loading = ref(false)
@@ -45,13 +47,23 @@ async function load(): Promise<void> {
   loading.value = true
   try {
     stats.value = await fetchFunnel()
-    await renderFunnel()
+    // 容器须在 .view 可见（active）后才有尺寸，nextTick 等 display 生效再初始化，避免 0×0 空图
+    await nextTick()
+    renderFunnel()
   } finally {
     loading.value = false
   }
 }
 
-onMounted(load)
+// 看板默认隐藏（.view display:none），等切到 active 再拉数据/初始化，否则 ECharts 拿到 0 尺寸
+onMounted(() => {
+  if (props.active) void load()
+})
+watch(() => props.active, (v) => {
+  if (!v) return
+  if (!chart) void load()
+  else void nextTick(() => chart?.resize())
+})
 onBeforeUnmount(() => {
   chart?.dispose()
   chart = null

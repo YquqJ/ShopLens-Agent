@@ -43,7 +43,7 @@ onMounted(() => { void store.hydrate() })
             <ChatView />
           </section>
           <section class="view" :class="{ active: view === 'dashboard' }">
-            <DashboardView />
+            <DashboardView :active="view === 'dashboard'" />
           </section>
         </div>
         <div v-if="view === 'chat'" class="composer">
