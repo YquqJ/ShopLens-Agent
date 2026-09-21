@@ -9,9 +9,9 @@
 - HITL 挂起时草稿在 snap.interrupts 载荷里（state 尚未提交 draft_order），需从载荷取回。
 """
 from langchain_core.messages import BaseMessage
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-from app.db.models import Conversation
+from app.db.models import ConversionEvent, Conversation, Order
 from app.db.session import async_session_factory
 
 
@@ -95,3 +95,26 @@ async def get_conversation(graph, thread_id: str) -> dict:
         "price_raised": bool(values.get("price_raised")),
         "awaiting_hitl": awaiting,
     }
+
+
+async def delete_conversation(graph, thread_id: str) -> bool:
+    """删除会话：清关联转化事件/订单 → 删会话行 → 删 checkpointer 线程状态。"""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Conversation).where(Conversation.thread_id == thread_id)
+        )
+        conv = result.scalar_one_or_none()
+        if conv is None:
+            return False
+        cid = conv.id
+        # 无 ondelete cascade，先清子表再删父表，否则外键约束拒绝删除
+        await session.execute(delete(ConversionEvent).where(ConversionEvent.conversation_id == cid))
+        await session.execute(delete(Order).where(Order.conversation_id == cid))
+        await session.delete(conv)
+        await session.commit()
+    # checkpointer 线程一并删除（会话彻底移除）；线程可能无 checkpoint（/chat 登记后流失败），失败不影响
+    try:
+        await graph.checkpointer.adelete_thread(thread_id)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
