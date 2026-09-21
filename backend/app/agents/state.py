@@ -13,9 +13,18 @@ from typing import Annotated, Any, TypedDict
 from langchain_core.messages import HumanMessage
 
 
+def merge_preferences(a: dict, b: dict) -> dict:
+    """跨轮累积偏好：b 的非空字段覆盖 a（历史已确认信息不回退）。"""
+    merged = dict(a or {})
+    for k, v in (b or {}).items():
+        if v not in (None, "", []):
+            merged[k] = v
+    return merged
+
+
 class AgentState(TypedDict):
     messages: Annotated[list[Any], operator.add]
-    preferences: dict
+    preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
     intent: str
     needs_action: str          # "" | "clarify" | "shopping"
     clarify_question: str      # M8：澄清问句（独立序列化字段，供前端透出；messages 不含）
