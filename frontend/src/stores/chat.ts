@@ -57,6 +57,7 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
   compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
   normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
+  confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
   lock_price: { label: '二次询价锁价', desc: '下单前重新报价锁定价格' },
   place_order: { label: '下单落库', desc: '订单写入 PostgreSQL' },
 }
@@ -104,14 +105,18 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
   const last = turns.at(-1)
   if (last) {
     last.preferences = d.preferences && Object.keys(d.preferences).length ? d.preferences : null
-    last.normalized = d.normalized ?? []
-    last.recommendation = d.recommendation
-    last.degradedSources = d.recommendation?.degraded_sources ?? []
-    last.draftOrder = d.draft_order
-    last.order = d.order
-    last.priceRaised = d.price_raised
-    last.awaitingHitl = d.awaiting_hitl
-    last.impressed = !!d.recommendation
+    // 末轮已成交（placed/cancelled）：不还原候选卡，改由 messages 里的「已下单/未下单」摘要原位替位
+    const resolved = d.order?.status === 'placed' || d.order?.status === 'cancelled'
+    if (!resolved) {
+      last.normalized = d.normalized ?? []
+      last.recommendation = d.recommendation
+      last.degradedSources = d.recommendation?.degraded_sources ?? []
+      last.draftOrder = d.draft_order
+      last.order = d.order
+      last.priceRaised = d.price_raised
+      last.awaitingHitl = d.awaiting_hitl
+      last.impressed = !!d.recommendation
+    }
   }
   return turns
 }
@@ -127,6 +132,19 @@ function pushTrace(turn: Turn, name: string, status: TraceNode['status'], extra?
     return
   }
   turn.trace.push({ name, label: meta.label, desc, status })
+}
+
+// 金额展示：整元不带小数（与后端 place_order 回写 messages 的摘要文案一致）
+function fmtYuan(v: number | null | undefined): string {
+  if (v == null) return ''
+  return Number.isInteger(v) ? String(v) : v.toFixed(2)
+}
+
+// 下单完成摘要文本：候选卡用「已下单 xx · ¥xx」替位
+function orderSummary(turn: Turn): string {
+  const title = turn.draftOrder?.title ?? ''
+  const price = fmtYuan(turn.order?.final_price ?? turn.draftOrder?.final_price)
+  return `已下单「${title}」· ¥${price}`
 }
 
 export const useChatStore = defineStore('chat', {
@@ -294,17 +312,23 @@ export const useChatStore = defineStore('chat', {
         turn.draftOrder = (data as { draft_order?: DraftOrder }).draft_order ?? null
         turn.awaitingHitl = true
         turn.streaming = false
-        pushTrace(turn, 'confirm', 'waiting', ' · HITL：等待确认下单')
-        pushTrace(turn, 'lock_price', 'pending')
-        pushTrace(turn, 'place_order', 'pending')
+        // 只标 confirm 等待；lock_price/place_order 在 resume 后真正执行时才会进轨迹，
+        // 避免「取消/涨价」分支未执行却残留 pending 节点导致不闭合
+        pushTrace(turn, 'confirm', 'waiting', ' · 等待确认')
       }
     },
     handleDone(turn: Turn, data: Record<string, unknown>): void {
       turn.order = (data as OrderResult) ?? null
       turn.streaming = false
       turn.awaitingHitl = false
-      // 下单完成（place_order 后 done 携带已落库订单）
-      if (turn.draftOrder && turn.order?.status === 'cancelled') {
+      // 下单完成/取消：用摘要替位候选卡（「已下单 xx · ¥xx」/「未下单」），与后端回写 messages 文案一致
+      if (turn.order?.status === 'placed') {
+        turn.agentReply = orderSummary(turn)
+        turn.recommendation = null
+        turn.draftOrder = null
+      } else if (turn.order?.status === 'cancelled') {
+        turn.agentReply = '未下单'
+        turn.recommendation = null
         turn.draftOrder = null
       }
     },

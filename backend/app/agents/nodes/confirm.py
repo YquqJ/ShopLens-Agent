@@ -6,6 +6,7 @@
   仅首轮确认应用选择；涨价重确认（lock_attempts>0）保留锁价后的 draft，不再重建；
 - resume 值为 {"confirm": bool, "sku_id"?: str, "platform"?: str}，取消则 draft_order 置 None 走 END。
 """
+from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
 from app.agents.state import AgentState
@@ -60,7 +61,12 @@ async def confirm_node(state: AgentState) -> dict:
     decision = interrupt({"type": "confirm_order", "draft_order": draft})
     confirm = decision.get("confirm") if isinstance(decision, dict) else bool(decision)
     if not confirm:
-        return {"draft_order": None, "order": {"status": "cancelled"}}
+        # 取消下单：回写「未下单」摘要，会话历史还原时原地展示
+        return {
+            "draft_order": None,
+            "order": {"status": "cancelled"},
+            "messages": [AIMessage("未下单")],
+        }
     # 方案 B：仅首轮确认应用「候选/平台选择」，重确认保留锁定价
     if not re_confirm and isinstance(decision, dict):
         selected = _resolve_selection(normalized, decision)
