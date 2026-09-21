@@ -4,7 +4,7 @@
 // 前端把 node/interrupt/done/error 四类事件逐步落到当前 Turn 上，驱动消息气泡 + 比价表 + HITL + Trace 抽屉。
 import { reactive } from 'vue'
 import { defineStore } from 'pinia'
-import { chatStream, fetchConversation, fetchConversations, recordEvent, resumeStream } from '../api/client'
+import { chatStream, deleteConversation, fetchConversation, fetchConversations, recordEvent, resumeStream } from '../api/client'
 import type {
   ConversationDetail,
   DraftOrder,
@@ -37,6 +37,7 @@ export interface Turn {
   streaming: boolean
   awaitingHitl: boolean
   impressed: boolean
+  clickedSkus: string[]
   priceRaised: boolean
   error: string
 }
@@ -78,6 +79,7 @@ function newTurn(user: string): Turn {
     streaming: true,
     awaitingHitl: false,
     impressed: false,
+    clickedSkus: [],
     priceRaised: false,
     error: '',
   })
@@ -185,6 +187,21 @@ export const useChatStore = defineStore('chat', {
         console.error('会话详情加载失败', e)
       }
     },
+    // 删除会话：后端删行 + 本地移除；删的是当前会话则切到最近一条或新建空会话
+    async deleteSession(id: string): Promise<void> {
+      await deleteConversation(id)
+      const wasActive = this.activeId === id
+      this.sessions = this.sessions.filter((s) => s.id !== id)
+      this.loadedIds = this.loadedIds.filter((x) => x !== id)
+      if (wasActive) {
+        if (this.sessions.length) {
+          this.activeId = this.sessions[0].id
+          void this.loadSession(this.sessions[0].id)
+        } else {
+          this.newSession()
+        }
+      }
+    },
     async sendMessage(text: string): Promise<void> {
       const session = this.activeSession
       const turn = newTurn(text)
@@ -200,7 +217,11 @@ export const useChatStore = defineStore('chat', {
       turn.streaming = true
       await this.run(turn, () => resumeStream(session.id, confirm, (ev) => this.handleEvent(session, turn, ev), skuId, platform))
     },
-    trackClick(skuId: string): void {
+    trackClick(skuId: string, turnId: string): void {
+      // 每轮每 SKU 只记一次点击（点击=选中候选），避免重复点击把点击率放大失真
+      const turn = this.activeSession.turns.find((t) => t.id === turnId)
+      if (!turn || turn.clickedSkus.includes(skuId)) return
+      turn.clickedSkus.push(skuId)
       void recordEvent(this.activeId, 'click', skuId)
     },
     async run(turn: Turn, stream: () => Promise<void>): Promise<void> {

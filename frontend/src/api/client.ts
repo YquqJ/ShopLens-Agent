@@ -96,3 +96,8 @@ export async function fetchConversation(threadId: string): Promise<ConversationD
   if (!resp.ok) throw new Error(`会话详情加载失败：${resp.status}`)
   return resp.json()
 }
+
+export async function deleteConversation(threadId: string): Promise<void> {
+  const resp = await fetch(`/api/conversations/${threadId}`, { method: 'DELETE' })
+  if (!resp.ok) throw new Error(`会话删除失败：${resp.status}`)
+}

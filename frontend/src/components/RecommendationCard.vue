@@ -43,18 +43,21 @@ const topNormalized = computed(() => {
 
 const degradedList = computed(() => props.turn.degradedSources)
 
-// 方案 B：HITL 候选商品 / 平台选择（默认首项 + 其最优解）
-const selectedSkuId = ref(rec.value.items[0]?.sku_id ?? '')
-const selectedPlatform = ref(bySku.value[rec.value.items[0]?.sku_id ?? '']?.best?.platform ?? '')
-const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value) ?? rec.value.items[0])
+// HITL 候选选择：默认不选中——最推荐那条只打「推荐」标记，用户点卡片才算「点击查看」并选中
+const selectedSkuId = ref('')
+const selectedPlatform = ref('')
+const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value))
 const selectedQuotes = computed<Quote[]>(() => bySku.value[selectedSkuId.value]?.quotes ?? [])
 const selectedBest = computed(() => bySku.value[selectedSkuId.value]?.best?.platform ?? '')
 const selectedQuote = computed<Quote | null>(
   () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
 )
-function onSkuChange(): void {
-  // 切换商品后，平台回落到该商品的最优解
+function selectSku(skuId: string): void {
+  // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
+  if (selectedSkuId.value === skuId) return
+  selectedSkuId.value = skuId
   selectedPlatform.value = selectedBest.value
+  store.trackClick(skuId, props.turn.id)
 }
 
 interface HitlSummary { title: string; platform: string; final_price: number; eta_days: number }
@@ -96,8 +99,8 @@ async function cancel(): Promise<void> {
       v-for="(item, idx) in rec.items"
       :key="item.sku_id"
       class="cand"
-      :class="{ optimal: idx === 0 }"
-      @click="store.trackClick(item.sku_id)"
+      :class="{ selected: selectedSkuId === item.sku_id }"
+      @click="selectSku(item.sku_id)"
     >
       <div class="thumb">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9z" /><path d="M2 9h20M12 21 8 9l4-6 4 6-4 12" /></svg>
@@ -105,7 +108,7 @@ async function cancel(): Promise<void> {
       <div>
         <h4>
           {{ item.title }}
-          <span :class="idx === 0 ? 'badge-best' : 'badge-alt'">{{ idx === 0 ? '综合最优' : '备选' }}</span>
+          <span :class="idx === 0 ? 'badge-best' : 'badge-alt'">{{ idx === 0 ? '👍 推荐' : '备选' }}</span>
         </h4>
         <div class="tags">
           <span v-for="(v, k) in item.attributes" :key="k" class="tag">{{ v }}</span>
@@ -173,25 +176,8 @@ async function cancel(): Promise<void> {
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
         下单确认 · 人工确认（HITL）
       </h3>
-      <p>可切换候选商品与购买平台，确认后下单前会二次询价锁定价格。</p>
-
-      <!-- 方案 B：候选商品 / 平台选择（仅首轮，涨价重确认时隐藏） -->
-      <div v-if="!turn.priceRaised" style="margin:14px 20px 0;display:grid;gap:8px">
-        <label style="display:grid;grid-template-columns:36px 1fr;align-items:center;gap:10px;font-size:13px;color:#A8A29E">
-          <span>商品</span>
-          <select v-model="selectedSkuId" @change="onSkuChange" style="background:#292524;color:#FAFAF9;border:1px solid #44403C;border-radius:8px;padding:8px 10px;font-size:13px">
-            <option v-for="it in rec.items" :key="it.sku_id" :value="it.sku_id">{{ it.title }}</option>
-          </select>
-        </label>
-        <label style="display:grid;grid-template-columns:36px 1fr;align-items:center;gap:10px;font-size:13px;color:#A8A29E">
-          <span>平台</span>
-          <select v-model="selectedPlatform" style="background:#292524;color:#FAFAF9;border:1px solid #44403C;border-radius:8px;padding:8px 10px;font-size:13px">
-            <option v-for="q in selectedQuotes" :key="q.platform" :value="q.platform">
-              {{ platName(q.platform) }} · 到手 {{ fmt(q.final_price) }}{{ q.platform === selectedBest ? '（最优）' : '' }}
-            </option>
-          </select>
-        </label>
-      </div>
+      <p>点击上方任一候选卡片选中商品，下单前会二次询价锁定价格。</p>
+      <div v-if="!turn.priceRaised && !selectedSkuId" class="select-hint">👆 请先点选一款候选商品，再确认下单</div>
 
       <div v-if="summary" class="order-summary">
         <div class="order-line"><span>{{ summary.title }} ×1</span><span>{{ fmt(summary.final_price) }}</span></div>
@@ -202,7 +188,7 @@ async function cancel(): Promise<void> {
       <div v-if="turn.priceRaised && turn.order?.status !== 'placed'" class="lock-note show">二次询价发现价格变动，请确认最新到手价后再下单。</div>
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
       <div v-if="turn.order?.status !== 'placed'" class="btn-row">
-        <button class="btn btn-primary" :disabled="turn.streaming" @click="confirm">{{ turn.streaming ? '二次询价中…' : '确认下单' }}</button>
+        <button class="btn btn-primary" :disabled="turn.streaming || (!turn.priceRaised && !selectedSkuId)" @click="confirm">{{ turn.streaming ? '二次询价中…' : '确认下单' }}</button>
         <button class="btn btn-ghost" :disabled="turn.streaming" @click="cancel">取消下单</button>
       </div>
     </div>

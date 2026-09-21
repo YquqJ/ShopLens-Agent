@@ -31,16 +31,19 @@ const prefTags = computed(() => {
     </button>
     <h4>会话</h4>
     <div class="sessions">
-      <button
-        v-for="s in store.sessions"
-        :key="s.id"
-        class="session"
-        :class="{ active: s.id === store.activeId }"
-        @click="store.selectSession(s.id)"
-      >
-        <div class="t">{{ s.title }}</div>
-        <div class="s">{{ s.subtitle }}</div>
-      </button>
+      <div v-for="s in store.sessions" :key="s.id" class="session-row">
+        <button
+          class="session"
+          :class="{ active: s.id === store.activeId }"
+          @click="store.selectSession(s.id)"
+        >
+          <div class="t">{{ s.title }}</div>
+          <div class="s">{{ s.subtitle }}</div>
+        </button>
+        <button class="session-del" title="删除会话" @click.stop="store.deleteSession(s.id)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
     </div>
     <div class="profile-card">
       <h5>已理解偏好</h5>
