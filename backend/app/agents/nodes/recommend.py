@@ -44,6 +44,12 @@ def _fmt_attrs(attrs: dict) -> str:
     return "/".join(str(v) for v in (attrs or {}).values())
 
 
+def _fmt_delivery(b: dict) -> str:
+    """物流时效文案；真实源（值海纳）无 eta 字段时不为 0 天，防 LLM 现编时效。"""
+    eta = b.get("eta_days")
+    return f"{eta}天" if eta else ""
+
+
 def _fmt_prefs(prefs: dict) -> str:
     """偏好字典 → 紧凑「键=值」，跳过空字段（裁剪用）。"""
     mapping = [("category", "品类"), ("budget", "预算"), ("style", "风格"),
@@ -57,15 +63,16 @@ def build_user(prefs: dict, top: list[dict], degraded: list[str], *, compact: bo
     lines = []
     for item in top:
         b = item["best"]
+        eta = _fmt_delivery(b)
         if compact:
             lines.append(
                 f"- {item['sku_id']} {item['title']} {_fmt_attrs(item['attributes'])}"
-                f" | {b['platform']} {b['final_price']}元 {b['eta_days']}天"
+                f" | {b['platform']} {b['final_price']}元 {eta}"
             )
         else:
             lines.append(
                 f"- {item['sku_id']} {item['title']} 属性={item['attributes']} "
-                f"最优平台={b['platform']} 到手价={b['final_price']} 快递{b['eta_days']}天"
+                f"最优平台={b['platform']} 到手价={b['final_price']} {eta}"
             )
     head = f"偏好 {_fmt_prefs(prefs)}" if compact else f"用户偏好={prefs}"
     user = f"{head}\n候选：\n" + "\n".join(lines)

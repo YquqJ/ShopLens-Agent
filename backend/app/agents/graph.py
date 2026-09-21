@@ -31,6 +31,16 @@ def _after_route(state: AgentState) -> str:
     return "retrieve" if state.get("intent") == "shopping" else "end"
 
 
+def _after_retrieve(state: AgentState) -> str:
+    # 值海纳真实源：检索结果已是可推荐结构，跳过比价/归一，直连推荐
+    return "recommend" if state.get("zdm_mode") else "compare"
+
+
+def _after_recommend(state: AgentState) -> str:
+    # 真实源无下单闭环（不可对真实商品走仿真二次询价），推荐后即结束
+    return "end" if state.get("zdm_mode") else "confirm"
+
+
 def _after_confirm(state: AgentState) -> str:
     if not state.get("draft_order"):
         return "end"                          # 取消下单
@@ -58,10 +68,16 @@ def build_graph(checkpointer=None):
     g.add_edge(START, "clarify")
     g.add_conditional_edges("clarify", _after_clarify, {"route": "route", "end": END})
     g.add_conditional_edges("route", _after_route, {"retrieve": "retrieve", "end": END})
-    g.add_edge("retrieve", "compare")
+    g.add_conditional_edges(
+        "retrieve", _after_retrieve,
+        {"compare": "compare", "recommend": "recommend"},
+    )
     g.add_edge("compare", "normalize")
     g.add_edge("normalize", "recommend")
-    g.add_edge("recommend", "confirm")
+    g.add_conditional_edges(
+        "recommend", _after_recommend,
+        {"confirm": "confirm", "end": END},
+    )
     g.add_conditional_edges(
         "confirm", _after_confirm,
         {"lock_price": "lock_price", "place_order": "place_order", "end": END},
