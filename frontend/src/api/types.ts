@@ -92,3 +92,27 @@ export interface SSEEvent {
   event: string
   data: Record<string, unknown>
 }
+
+// 会话历史（后端 /api/conversations* 读回 checkpointer 最新状态）
+export interface ConversationSummary {
+  thread_id: string
+  title: string
+  subtitle: string
+  updated_at: string | null
+}
+
+export interface HistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ConversationDetail {
+  messages: HistoryMessage[]
+  preferences: Preferences
+  normalized: NormalizedItem[]
+  recommendation: Recommendation | null
+  draft_order: DraftOrder | null
+  order: OrderResult | null
+  price_raised: boolean
+  awaiting_hitl: boolean
+}

@@ -14,6 +14,7 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from app.agents.state import initial_state
+from app.services.order import ensure_conversation
 
 router = APIRouter()
 
@@ -62,6 +63,8 @@ async def _stream(graph, cfg, payload, is_resume: bool):
 @router.post("/chat")
 async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
     graph = request.app.state.graph
+    # 每轮都登记会话行（首条消息即建），会话列表按 conversations 表取，非仅下单后
+    await ensure_conversation(req.thread_id)
     cfg = _make_cfg(request, req.thread_id)
 
     async def gen() -> AsyncGenerator[str, None]:

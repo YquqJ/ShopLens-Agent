@@ -4,8 +4,9 @@
 // 前端把 node/interrupt/done/error 四类事件逐步落到当前 Turn 上，驱动消息气泡 + 比价表 + HITL + Trace 抽屉。
 import { reactive } from 'vue'
 import { defineStore } from 'pinia'
-import { chatStream, recordEvent, resumeStream } from '../api/client'
+import { chatStream, fetchConversation, fetchConversations, recordEvent, resumeStream } from '../api/client'
 import type {
+  ConversationDetail,
   DraftOrder,
   NormalizedItem,
   OrderResult,
@@ -82,6 +83,37 @@ function newTurn(user: string): Turn {
   })
 }
 
+function hydrateTurns(d: ConversationDetail): Turn[] {
+  // 第一档重建：messages 按「user 开新轮」切分，assistant 文本入 clarifyQuestion/agentReply，
+  // 最新一轮补挂 checkpointer 的最新结构化结果（推荐/草稿/订单，多轮历史卡片不逐轮保留）。
+  const turns: Turn[] = []
+  let cur: Turn | null = null
+  for (const m of d.messages) {
+    if (m.role === 'user') {
+      cur = newTurn(m.content)
+      cur.streaming = false
+      turns.push(cur)
+    } else if (cur) {
+      const q = m.content
+      if (q.endsWith('？') || q.endsWith('?')) cur.clarifyQuestion = q
+      else cur.agentReply = q
+    }
+  }
+  const last = turns.at(-1)
+  if (last) {
+    last.preferences = d.preferences && Object.keys(d.preferences).length ? d.preferences : null
+    last.normalized = d.normalized ?? []
+    last.recommendation = d.recommendation
+    last.degradedSources = d.recommendation?.degraded_sources ?? []
+    last.draftOrder = d.draft_order
+    last.order = d.order
+    last.priceRaised = d.price_raised
+    last.awaitingHitl = d.awaiting_hitl
+    last.impressed = !!d.recommendation
+  }
+  return turns
+}
+
 function pushTrace(turn: Turn, name: string, status: TraceNode['status'], extra?: string): void {
   // 复用同名节点：interrupt 后 resume 会再发 lock_price/place_order，直接更新已存在的待执行项
   const existing = turn.trace.find((n) => n.name === name)
@@ -103,7 +135,7 @@ export const useChatStore = defineStore('chat', {
       subtitle: '等待输入购物需求',
       turns: [],
     }
-    return { sessions: [first], activeId: first.id }
+    return { sessions: [first], activeId: first.id, loadedIds: [] as string[] }
   },
   getters: {
     activeSession(state): Session {
@@ -118,7 +150,40 @@ export const useChatStore = defineStore('chat', {
       return s.id
     },
     selectSession(id: string): void {
-      if (this.sessions.some((s) => s.id === id)) this.activeId = id
+      if (!this.sessions.some((s) => s.id === id)) return
+      this.activeId = id
+      void this.loadSession(id)
+    },
+    // 启动时从后端拉会话列表，回填左侧 rail 并加载最近一条
+    async hydrate(): Promise<void> {
+      try {
+        const list = await fetchConversations()
+        if (!list.length) return
+        this.sessions = list.map((s) => ({
+          id: s.thread_id,
+          title: s.title,
+          subtitle: s.subtitle,
+          turns: [],
+        }))
+        this.activeId = list[0].thread_id
+        this.loadedIds = []
+        await this.loadSession(list[0].thread_id)
+      } catch (e) {
+        console.error('会话列表加载失败', e)
+      }
+    },
+    // 懒加载某会话历史（只拉一次，缓存到 loadedIds）
+    async loadSession(id: string): Promise<void> {
+      if (this.loadedIds.includes(id)) return
+      const session = this.sessions.find((s) => s.id === id)
+      if (!session) return
+      try {
+        const d = await fetchConversation(id)
+        session.turns = hydrateTurns(d)
+        this.loadedIds.push(id)
+      } catch (e) {
+        console.error('会话详情加载失败', e)
+      }
     },
     async sendMessage(text: string): Promise<void> {
       const session = this.activeSession

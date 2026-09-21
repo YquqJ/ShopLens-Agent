@@ -5,6 +5,7 @@
 - thread_id（LangGraph 线程）即会话归属，下单前按 thread_id 取/建 Conversation，
   订单挂到其 conversation_id 上，M8 转化漏斗按此归因。
 """
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -27,8 +28,11 @@ async def ensure_conversation(thread_id: str) -> int:
         if conv is None:
             conv = Conversation(thread_id=thread_id)
             session.add(conv)
-            await session.commit()
-            await session.refresh(conv)
+        else:
+            # 会话活跃即刷新更新时间，供会话列表按最近互动排序
+            conv.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+        await session.refresh(conv)
         return conv.id
 
 

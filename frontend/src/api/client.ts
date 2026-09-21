@@ -1,5 +1,10 @@
 // 后端交互客户端：SSE 流式（POST 用 fetch + ReadableStream，EventSource 仅支持 GET）
-import type { FunnelStats, SSEEvent } from './types'
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  FunnelStats,
+  SSEEvent,
+} from './types'
 
 function parseFrame(frame: string): SSEEvent | null {
   let event = 'message'
@@ -77,5 +82,17 @@ export async function recordEvent(
 export async function fetchFunnel(): Promise<FunnelStats> {
   const resp = await fetch('/api/funnel')
   if (!resp.ok) throw new Error(`漏斗统计请求失败：${resp.status}`)
+  return resp.json()
+}
+
+export async function fetchConversations(): Promise<ConversationSummary[]> {
+  const resp = await fetch('/api/conversations')
+  if (!resp.ok) throw new Error(`会话列表加载失败：${resp.status}`)
+  return resp.json()
+}
+
+export async function fetchConversation(threadId: string): Promise<ConversationDetail> {
+  const resp = await fetch(`/api/conversations/${threadId}`)
+  if (!resp.ok) throw new Error(`会话详情加载失败：${resp.status}`)
   return resp.json()
 }
