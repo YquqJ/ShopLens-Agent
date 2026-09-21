@@ -1,7 +1,7 @@
 """商品目录服务：seed 生成、向量化、语义检索、存量校验。
 
 职责划分（配合 tools/catalog.py 的 @tool 薄封装）：
-- build_seed_products()：确定性生成 ~100 SKU（品类/材质/风格/价格/库存），
+- build_seed_products()：确定性生成 ~100 SKU（首饰 + 3C 多类目，属性/价格/库存），
   价格/库存在此固化，随后写入 Postgres；
 - seed()：SKU 写入 Postgres(products 表) + 向量化进 Chroma(products 集合)；
 - search()：query 先 Chroma 语义检索召回候选，再用 sku_id 回 Postgres 取权威价格/库存；
@@ -32,11 +32,27 @@ COLLECTION_NAME = "products"
 # DashScope text-embedding-v3 单次请求 input 上限（保守取 10），seed 分批灌入
 _EMBED_BATCH = 10
 
-# ---- seed 配置：类别/材质/风格；价格 = 材质基准价 × 波动，种子固定保证可复现 ----
-CATEGORIES = ["项链", "手链", "戒指", "耳环", "手镯", "胸针"]
+# ---- seed 配置：类目 → (属性维度{键: 候选值}, 基准价) ----
+# 首饰沿用 材质/风格；3C 用品 牌/存储 等。价格 = 基准价 × 0.85~1.15 波动，固定种子保证可复现。
 MATERIALS = ["925银", "18K金", "玫瑰金", "黄金", "铂金"]
 STYLES = ["简约", "复古", "浪漫", "时尚"]
-MATERIAL_BASE_PRICE = {"925银": 399, "18K金": 1899, "玫瑰金": 1599, "黄金": 3999, "铂金": 4999}
+
+# 每个类目：属性维度（键 → 候选值）+ 基准价（元）
+CATALOG_SPECS: list[tuple[str, dict[str, list[str]], float]] = [
+    # ---- 首饰 ----
+    ("项链", {"材质": MATERIALS, "风格": STYLES}, 1800),
+    ("手链", {"材质": MATERIALS, "风格": STYLES}, 1200),
+    ("戒指", {"材质": MATERIALS, "风格": STYLES}, 1500),
+    ("耳环", {"材质": MATERIALS, "风格": STYLES}, 800),
+    ("手镯", {"材质": MATERIALS, "风格": STYLES}, 1400),
+    ("胸针", {"材质": MATERIALS, "风格": STYLES}, 600),
+    # ---- 3C ----
+    ("手机", {"品牌": ["Apple", "华为", "小米", "OPPO", "vivo", "荣耀"], "存储": ["128G", "256G", "512G", "1T"]}, 4500),
+    ("耳机", {"品牌": ["Apple", "索尼", "Bose", "华为", "小米"], "类型": ["入耳式", "头戴式", "真无线"]}, 900),
+    ("平板", {"品牌": ["Apple", "华为", "小米", "联想"], "存储": ["64G", "128G", "256G"]}, 3200),
+    ("智能手表", {"品牌": ["Apple", "华为", "小米", "Amazfit"], "版本": ["标准版", "运动版"]}, 1600),
+    ("蓝牙音箱", {"品牌": ["索尼", "Bose", "JBL", "小米"], "类型": ["便携", "桌面", "户外"]}, 500),
+]
 
 
 def build_seed_products(count: int = 100) -> list[dict]:
@@ -44,17 +60,18 @@ def build_seed_products(count: int = 100) -> list[dict]:
     rng = random.Random(42)
     products: list[dict] = []
     for i in range(1, count + 1):
-        category = CATEGORIES[(i - 1) % len(CATEGORIES)]
-        material = MATERIALS[(i - 1) % len(MATERIALS)]
-        style = STYLES[(i - 1) % len(STYLES)]
-        price = round(MATERIAL_BASE_PRICE[material] * rng.uniform(0.85, 1.15), 2)
+        category, dims, base_price = CATALOG_SPECS[(i - 1) % len(CATALOG_SPECS)]
+        # 每属性维度按同一偏移挑候选值，保证同 SKU 属性组合确定
+        attributes = {key: values[(i - 1) % len(values)] for key, values in dims.items()}
+        price = round(base_price * rng.uniform(0.85, 1.15), 2)
         stock = rng.randint(0, 120)  # 含缺货样本，供 check_stock_price 校验
         sku_id = f"SKU{i:04d}"
+        title = " ".join(str(v) for v in attributes.values()) + f" {category}"
         products.append({
             "sku_id": sku_id,
-            "title": f"{style} {material} {category}",
+            "title": title,
             "category": category,
-            "attributes": {"材质": material, "风格": style},
+            "attributes": attributes,
             "price": price,
             "stock": stock,
             "image_url": f"https://picsum.photos/seed/{sku_id.lower()}/400/400",
