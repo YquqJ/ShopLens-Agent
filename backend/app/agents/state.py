@@ -8,6 +8,7 @@
 - hop_count：多轮澄清次数，防死循环用。
 """
 import operator
+import time
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import HumanMessage
@@ -45,7 +46,7 @@ class AgentState(TypedDict):
 def initial_state(message: str) -> AgentState:
     """构造初始状态（首轮用户消息 + 各字段默认值）。"""
     return {
-        "messages": [HumanMessage(message)],
+        "messages": [HumanMessage(message, additional_kwargs={"ts": time.time()})],
         "preferences": {},
         "intent": "",
         "needs_action": "",

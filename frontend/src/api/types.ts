@@ -80,12 +80,20 @@ export interface OrderResult {
   status?: string
 }
 
+export interface FunnelOrder {
+  title: string
+  platform: string | null
+  final_price: number | null
+  created_at: string | null
+}
+
 export interface FunnelStats {
   impression: number
   click: number
   order: number
   click_rate: number
   order_rate: number
+  orders: FunnelOrder[]
 }
 
 export interface SSEEvent {
@@ -104,6 +112,7 @@ export interface ConversationSummary {
 export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
+  ts?: number
 }
 
 export interface ConversationDetail {

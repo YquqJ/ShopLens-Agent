@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.db.models import ConversionEvent, Conversation, Order
+from app.db.models import Conversation, Order
 from app.db.session import async_session_factory
 
 
@@ -36,8 +36,8 @@ async def ensure_conversation(thread_id: str) -> int:
         return conv.id
 
 
-async def place_order(draft: dict, thread_id: str) -> dict:
-    """落库生成已下单订单（status=placed），金额固化。"""
+async def place_order(draft: dict, thread_id: str, is_recommended: bool = False) -> dict:
+    """落库生成已下单订单（status=placed），金额固化；is_recommended 标记是否购买首推。"""
     conversation_id = await ensure_conversation(thread_id)
     async with async_session_factory() as session:
         order = Order(
@@ -47,12 +47,9 @@ async def place_order(draft: dict, thread_id: str) -> dict:
             quoted_price=_dec(draft.get("price")),
             final_price=_dec(draft.get("final_price")),
             status="placed",
+            is_recommended=is_recommended,
         )
         session.add(order)
-        # 下单落库同写 order 转化事件（M8 转化漏斗归因）
-        session.add(ConversionEvent(
-            conversation_id=conversation_id, event_type="order", sku_id=draft["sku_id"]
-        ))
         await session.commit()
         await session.refresh(order)
         return {

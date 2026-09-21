@@ -6,6 +6,18 @@ import RecommendationCard from './RecommendationCard.vue'
 const store = useChatStore()
 const scrollEl = ref<HTMLElement>()
 
+// 消息时间标签：今天只显时分，昨天显「昨天 HH:MM」，更早显「M.D」
+function timeLabel(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (diffDays === 0) return hm
+  if (diffDays === 1) return `昨天 ${hm}`
+  return `${d.getMonth() + 1}.${d.getDate()}`
+}
+
 async function scrollToBottom(): Promise<void> {
   await nextTick()
   if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
@@ -18,6 +30,7 @@ watch(() => store.activeSession, scrollToBottom, { deep: true })
 <template>
   <div ref="scrollEl" class="chat">
     <template v-for="(turn, i) in store.activeSession.turns" :key="turn.id">
+      <div v-if="turn.ts" class="time-divider">{{ timeLabel(turn.ts) }}</div>
       <div class="msg user"><div class="bubble">{{ turn.user }}</div></div>
 
       <!-- 流式进行中：比价/推荐未出 -->

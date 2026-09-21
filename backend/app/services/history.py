@@ -34,6 +34,7 @@ def _serialize_messages(messages) -> list[dict]:
         out.append({
             "role": "user" if m.type == "human" else "assistant",
             "content": _text(m.content),
+            "ts": (m.additional_kwargs or {}).get("ts"),
         })
     return out
 

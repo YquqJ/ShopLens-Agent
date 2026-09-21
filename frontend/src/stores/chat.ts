@@ -25,6 +25,7 @@ export interface TraceNode {
 export interface Turn {
   id: string
   user: string
+  ts: number
   clarifyQuestion: string
   agentReply: string
   preferences: Preferences | null
@@ -62,12 +63,13 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
   place_order: { label: '下单落库', desc: '订单写入 PostgreSQL' },
 }
 
-function newTurn(user: string): Turn {
+function newTurn(user: string, ts?: number): Turn {
   // 必须 reactive：sendMessage 手里攥着原始引用，后续 SSE 事件直接改它的字段，
   // 若为普通对象会绕过 Vue Proxy 的 set 陷阱 → 数据更新但组件不重渲染（spinner 卡死）。
   return reactive({
     id: crypto.randomUUID(),
     user,
+    ts: ts ?? Date.now(),
     clarifyQuestion: '',
     agentReply: '',
     preferences: null,
@@ -93,7 +95,7 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
   let cur: Turn | null = null
   for (const m of d.messages) {
     if (m.role === 'user') {
-      cur = newTurn(m.content)
+      cur = newTurn(m.content, m.ts != null ? m.ts * 1000 : undefined)
       cur.streaming = false
       turns.push(cur)
     } else if (cur) {
@@ -140,11 +142,15 @@ function fmtYuan(v: number | null | undefined): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(2)
 }
 
-// 下单完成摘要文本：候选卡用「已下单 xx · ¥xx」替位
+// 平台展示名（与后端 place_order 回写 messages 的摘要文案保持一致）
+const PLATFORM_NAME: Record<string, string> = { jd: '京东', taobao: '淘宝', pdd: '拼多多', master: '主库兜底' }
+
+// 下单完成摘要文本：候选卡用「已下单 xx · ¥xx · 平台」替位
 function orderSummary(turn: Turn): string {
   const title = turn.draftOrder?.title ?? ''
   const price = fmtYuan(turn.order?.final_price ?? turn.draftOrder?.final_price)
-  return `已下单「${title}」· ¥${price}`
+  const platform = turn.order?.platform ?? turn.draftOrder?.platform
+  return `已下单「${title}」· ¥${price}${platform ? ` · ${PLATFORM_NAME[platform] ?? platform}` : ''}`
 }
 
 export const useChatStore = defineStore('chat', {
@@ -240,6 +246,8 @@ export const useChatStore = defineStore('chat', {
       const turn = this.activeSession.turns.find((t) => t.id === turnId)
       if (!turn || turn.clickedSkus.includes(skuId)) return
       turn.clickedSkus.push(skuId)
+      // 漏斗「点击推荐」只统计点击👍推荐品，备选点击不计数
+      if (skuId !== turn.recommendation?.items[0]?.sku_id) return
       void recordEvent(this.activeId, 'click', skuId)
     },
     async run(turn: Turn, stream: () => Promise<void>): Promise<void> {

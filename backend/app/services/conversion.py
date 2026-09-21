@@ -1,13 +1,13 @@
 """转化事件服务：曝光/点击埋点落库 + 漏斗统计。
 
 设计决策：
-- 事件按 thread_id 归因到 Conversation（同 order_service.ensure_conversation），
-  曝光/点击由前端埋点写入，下单由 place_order 落库时写入，三类同表统一归因；
-- funnel_stats 只做「曝光/点击/下单」三段计数 + 层层转化率，ECharts 漏斗取数用。
+- 曝光/点击按 thread_id 归因到 Conversation（同 order_service.ensure_conversation），由前端埋点写入；
+  成交不再写事件，改由 orders 表的 is_recommended 标记统计（只算购买👍推荐品的下单）；
+- funnel_stats 做「曝光/点击/成交」三段计数 + 层层转化率 + 成交明细，ECharts 漏斗与明细表取数用。
 """
 from sqlalchemy import func, select
 
-from app.db.models import ConversionEvent
+from app.db.models import ConversionEvent, Order, Product
 from app.db.session import async_session_factory
 from app.services.order import ensure_conversation
 
@@ -36,20 +36,42 @@ async def record_event(thread_id: str, event_type: str, sku_id: str | None = Non
 
 
 async def funnel_stats() -> dict:
-    """漏斗统计：曝光/点击/下单三段计数 + 点击率/下单转化率（相对曝光）。"""
+    """漏斗统计：曝光/点击/成交三段计数 + 点击率/成交率（相对曝光）+ 成交明细。
+
+    曝光/点击来自前端埋点（点击只统计👍推荐品）；成交来自 orders 表中购买首推的下单。
+    """
     async with async_session_factory() as session:
         result = await session.execute(
             select(ConversionEvent.event_type, func.count())
             .group_by(ConversionEvent.event_type)
         )
         counts = {et: n for et, n in result.all()}
+        # 成交明细：购买推荐品（is_recommended）的下单，联 products 取标题，最近在下
+        rows = (
+            await session.execute(
+                select(Order, Product.title)
+                .join(Product, Product.sku_id == Order.sku_id)
+                .where(Order.status == "placed", Order.is_recommended.is_(True))
+                .order_by(Order.id.desc())
+            )
+        ).all()
     impression = counts.get("impression", 0)
     click = counts.get("click", 0)
-    order = counts.get("order", 0)
+    orders = [
+        {
+            "title": title or o.sku_id,
+            "platform": o.platform,
+            "final_price": float(o.final_price) if o.final_price is not None else None,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        }
+        for o, title in rows
+    ]
+    order = len(orders)
     return {
         "impression": impression,
         "click": click,
         "order": order,
         "click_rate": round(click / impression, 4) if impression else 0.0,
         "order_rate": round(order / impression, 4) if impression else 0.0,
+        "orders": orders,
     }

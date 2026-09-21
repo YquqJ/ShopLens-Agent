@@ -10,7 +10,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -76,6 +76,7 @@ class Order(Base):
     quoted_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     final_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="draft")
+    is_recommended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 是否购买首推（👍推荐品）
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
