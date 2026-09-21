@@ -115,7 +115,7 @@ textarea { font-family: inherit; }
 .badge-alt { background: var(--muted-bg); color: var(--muted-fg); font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
 .cand .why { font-size: 13px; color: var(--muted-fg); margin-top: 4px; }
 .cand.selected { outline: 2px solid var(--gold); outline-offset: -2px; background: rgba(202,138,4,.10); }
-.select-hint { display: flex; align-items: center; gap: 6px; margin: 12px 20px 0; padding: 9px 12px; border: 1px dashed var(--border); border-radius: 9px; font-size: 12.5px; color: var(--muted-fg); }
+.select-hint { display: flex; align-items: center; gap: 6px; margin: 12px 20px; padding: 9px 12px; border: 1px dashed var(--border); border-radius: 9px; font-size: 12.5px; color: var(--muted-fg); }
 
 .reason { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 14px; margin: 14px 0 18px; border-bottom: 1px solid var(--border); }
 .reason h5 { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-fg); margin-bottom: 9px; }
@@ -204,3 +204,7 @@ textarea { font-family: inherit; }
 
 @media (max-width: 1080px) { .body { grid-template-columns: 240px 1fr; } .trace { display: none; } .body.drawer-closed { grid-template-columns: 240px 1fr; } }
 @media (max-width: 860px) { .body { grid-template-columns: 1fr; } .rail { display: none; } .kpi-grid { grid-template-columns: repeat(2,1fr); } .msg .bubble { max-width: 94%; } }
+
+/* 转化看板：隐藏左右两侧栏，仅留居中主列（覆盖上面 media query 里的 .body.drawer-closed，故放最后） */
+.body.dash-active { grid-template-columns: 1fr; }
+.funnel-chart { max-width: 560px; margin: 0 auto; }

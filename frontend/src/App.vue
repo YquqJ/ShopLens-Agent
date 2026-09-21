@@ -34,8 +34,8 @@ onMounted(() => { void store.hydrate() })
       </button>
     </header>
 
-    <div class="body" :class="{ 'drawer-closed': !drawerOpen || view === 'dashboard' }">
-      <SessionRail />
+    <div class="body" :class="{ 'drawer-closed': !drawerOpen, 'dash-active': view === 'dashboard' }">
+      <SessionRail v-if="view === 'chat'" />
 
       <div class="main-col">
         <div class="content">

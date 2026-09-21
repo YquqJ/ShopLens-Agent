@@ -31,7 +31,15 @@ function renderFunnel(): void {
         minSize: '18%',
         sort: 'descending',
         gap: 2,
-        label: { show: true, position: 'inside', formatter: '{b}\n{c}', color: '#fff', fontFamily: 'Montserrat' },
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: '{t|{b}}\n{n|{c}}',
+          rich: {
+            t: { color: 'rgba(255,255,255,.85)', fontSize: 13, lineHeight: 18, fontFamily: 'Montserrat' },
+            n: { color: '#fff', fontSize: 30, fontWeight: 'bold', fontFamily: 'Montserrat', padding: [10, 0, 0, 0] },
+          },
+        },
         itemStyle: { borderWidth: 0 },
         data: [
           { value: s.impression, name: '推荐曝光', itemStyle: { color: '#1C1917' } },
@@ -80,10 +88,10 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="glass funnel">
-      <h3>推荐 → 点击 → 下单 转化漏斗</h3>
+      <h3><span style="margin-right: 12px;font-weight: 400;">推荐 → 点击 → 下单</span> 转化漏斗</h3>
       <div class="funnel-note">数据随会话实时累积 · 曝光/点击由前端埋点，下单由后端落库归因 <button class="btn btn-ghost" style="margin-left:12px;padding:5px 14px;font-size:12px" :disabled="loading" @click="load">刷新</button></div>
       <div v-if="stats && stats.impression === 0 && stats.click === 0 && stats.order === 0" class="empty-hint">暂无转化数据，完成一次「推荐 → 点击 → 下单」后即可在此看到漏斗</div>
-      <div ref="funnelEl" v-show="stats && (stats.impression + stats.click + stats.order > 0)" style="height:340px"></div>
+      <div ref="funnelEl" v-show="stats && (stats.impression + stats.click + stats.order > 0)" class="funnel-chart" style="height:340px"></div>
     </div>
   </div>
 </template>
