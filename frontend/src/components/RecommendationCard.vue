@@ -51,11 +51,15 @@ const selectedQuote = computed<Quote | null>(
   () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
 )
 function selectSku(skuId: string): void {
-  // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
+  // 点卡片 = 选中候选：平台回落到该商品的偏好优选解 + 记录点击（同一轮同 SKU 只记一次）
   if (selectedSkuId.value === skuId) return
   selectedSkuId.value = skuId
   selectedPlatform.value = selectedBest.value
   store.trackClick(skuId, props.turn.id)
+}
+
+function bestLabel(item: NormalizedItem): string {
+  return item.best_strategy === 'preferred_platform' ? '偏好优先' : '最优解'
 }
 
 interface HitlSummary { title: string; platform: string; final_price: number; eta_days: number }
@@ -141,7 +145,7 @@ async function cancel(): Promise<void> {
               <td>{{ q.eta_days }} 天{{ q.shipping_fee ? ` · 运费¥${q.shipping_fee}` : '' }}</td>
               <td style="text-align:right" class="final">
                 {{ fmt(q.final_price) }}
-                <span v-if="q.platform === activeNormalized.best.platform" class="pill-opt">最优解</span>
+                <span v-if="q.platform === activeNormalized.best.platform" class="pill-opt">{{ bestLabel(activeNormalized) }}</span>
               </td>
             </tr>
             <tr v-for="p in degradedList" :key="p" class="dead">
@@ -164,7 +168,7 @@ async function cancel(): Promise<void> {
       <div class="reason-item"><span class="src">理由</span>{{ activeItem.reason }}</div>
       <div v-if="activeNormalized" class="reason-item">
         <span class="src">出处</span>
-        {{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}
+        {{ bestLabel(activeNormalized) }}：{{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}
       </div>
     </div>
 

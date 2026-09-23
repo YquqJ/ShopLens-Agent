@@ -13,6 +13,7 @@ from app.agents.nodes import (
     compare,
     confirm,
     lock_price,
+    memory,
     normalize,
     place_order,
     recommend,
@@ -22,7 +23,7 @@ from app.agents.nodes import (
 from app.agents.state import AgentState
 
 
-def _after_clarify(state: AgentState) -> str:
+def _after_capture(state: AgentState) -> str:
     return "route" if state.get("needs_action") == "shopping" else "end"
 
 
@@ -55,6 +56,8 @@ def _after_lock_price(state: AgentState) -> str:
 def build_graph(checkpointer=None):
     g = StateGraph[AgentState, None, AgentState, AgentState](AgentState)
     g.add_node("clarify", clarify.clarify_node)
+    g.add_node("load_memory", memory.load_memory_node)
+    g.add_node("capture_memory", memory.capture_memory_node)
     g.add_node("route", route.route_node)
     g.add_node("retrieve", retrieve.retrieve_node)
     g.add_node("compare", compare.compare_node)
@@ -64,8 +67,10 @@ def build_graph(checkpointer=None):
     g.add_node("lock_price", lock_price.lock_price_node)
     g.add_node("place_order", place_order.place_order_node)
 
-    g.add_edge(START, "clarify")
-    g.add_conditional_edges("clarify", _after_clarify, {"route": "route", "end": END})
+    g.add_edge(START, "load_memory")
+    g.add_edge("load_memory", "clarify")
+    g.add_edge("clarify", "capture_memory")
+    g.add_conditional_edges("capture_memory", _after_capture, {"route": "route", "end": END})
     g.add_conditional_edges("route", _after_route, {"retrieve": "retrieve", "end": END})
     g.add_conditional_edges(
         "retrieve", _after_retrieve,

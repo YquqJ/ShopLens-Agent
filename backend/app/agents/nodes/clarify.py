@@ -17,11 +17,12 @@ from app.agents.state import AgentState, merge_preferences
 
 
 class Preferences(BaseModel):
-    category: str | None = Field(None, description="商品品类（自由填写，不限首饰），如 手机/耳机/项链/电脑")
+    category: str | None = Field(None, description="服饰品类，如 T恤/衬衫/卫衣/外套/裤装/鞋")
     budget: float | None = Field(None, description="预算（元）")
+    color: str | None = Field(None, description="本次颜色偏好，如 黑色/深蓝（无则留空）")
     style: str | None = Field(None, description="风格偏好，如 简约/复古（无则留空）")
-    material: str | None = Field(None, description="材质，如 18K金/925银（无则留空）")
-    scene: str | None = Field(None, description="使用/赠送场景，如 送女友")
+    material: str | None = Field(None, description="材质，如 纯棉/亚麻/羊毛（无则留空）")
+    scene: str | None = Field(None, description="穿着场景，如 通勤/周末/旅行（无则留空）")
 
 
 class ClarifyResult(BaseModel):
@@ -31,8 +32,8 @@ class ClarifyResult(BaseModel):
 
 
 _SYSTEM = (
-    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/风格/材质/场景），拿不准的字段留空。"
-    "品类不限首饰，手机/耳机/电脑/服饰等均可。关键信息=品类+预算，缺任一即 needs_clarification=True。"
+    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景），拿不准的字段留空。"
+    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋。关键信息=品类+预算，缺任一即 needs_clarification=True。"
 )
 
 
@@ -40,7 +41,7 @@ def _missing(prefs: dict) -> list[str]:
     """合并后仍缺的关键字段（品类/预算）追问文案。"""
     missing = []
     if not prefs.get("category"):
-        missing.append("想买什么品类（如手机、耳机、项链等）")
+        missing.append("想买什么服饰品类（如T恤、衬衫、外套等）")
     if prefs.get("budget") is None:
         missing.append("预算大概多少")
     return missing

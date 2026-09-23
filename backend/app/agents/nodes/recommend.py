@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.agents.llm import get_llm
 from app.agents.state import AgentState
+from app.agents.nodes.memory import build_effective_preferences
 
 _TOP_N = 3
 
@@ -52,9 +53,19 @@ def _fmt_delivery(b: dict) -> str:
 
 def _fmt_prefs(prefs: dict) -> str:
     """偏好字典 → 紧凑「键=值」，跳过空字段（裁剪用）。"""
-    mapping = [("category", "品类"), ("budget", "预算"), ("style", "风格"),
-               ("material", "材质"), ("scene", "场景")]
+    mapping = [("category", "品类"), ("budget", "预算"), ("color", "颜色"),
+               ("style", "风格"), ("material", "材质"), ("scene", "场景")]
     parts = [f"{cn}={prefs[k]}" for k, cn in mapping if prefs.get(k) not in (None, "", [])]
+    defaults = [
+        ("preferred_colors", "长期颜色", "color"),
+        ("preferred_styles", "长期风格", "style"),
+        ("preferred_materials", "长期材质", "material"),
+        ("preferred_platforms", "长期平台", None),
+        ("avoid_preferences", "长期避雷", None),
+    ]
+    for key, label, current_key in defaults:
+        if prefs.get(key) and (current_key is None or not prefs.get(current_key)):
+            parts.append(f"{label}={'、'.join(str(v) for v in prefs[key])}")
     return " ".join(parts) if parts else str(prefs)
 
 
@@ -83,7 +94,9 @@ def build_user(prefs: dict, top: list[dict], degraded: list[str], *, compact: bo
 
 async def recommend_node(state: AgentState) -> dict:
     normalized = state.get("normalized", [])
-    prefs = state.get("preferences") or {}
+    prefs = build_effective_preferences(
+        state.get("preferences") or {}, state.get("profile_preferences") or {},
+    )
     top = select_top(normalized, prefs.get("budget"))
     user = build_user(prefs, top, state.get("degraded_sources", []), compact=True)
 

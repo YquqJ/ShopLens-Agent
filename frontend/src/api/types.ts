@@ -42,6 +42,8 @@ export interface NormalizedItem {
   attributes: Record<string, string>
   quotes: Quote[]
   best: Quote
+  cost_best: Quote
+  best_strategy: 'preferred_platform' | 'lowest_total_cost'
   final_price: number
 }
 
@@ -101,6 +103,21 @@ export interface SSEEvent {
   data: Record<string, unknown>
 }
 
+export interface ProfilePreferences {
+  preferred_colors?: string[]
+  preferred_styles?: string[]
+  preferred_materials?: string[]
+  preferred_platforms?: string[]
+  avoid_preferences?: string[]
+}
+
+export interface MemoryEvent {
+  type: 'memory_read' | 'memory_write'
+  action?: 'write' | 'forget'
+  keys: string[]
+  count?: number
+}
+
 // 会话历史（后端 /api/conversations* 读回 checkpointer 最新状态）
 export interface ConversationSummary {
   thread_id: string
@@ -118,6 +135,8 @@ export interface HistoryMessage {
 export interface ConversationDetail {
   messages: HistoryMessage[]
   preferences: Preferences
+  profile_preferences: ProfilePreferences
+  memory_events: MemoryEvent[]
   normalized: NormalizedItem[]
   recommendation: Recommendation | null
   draft_order: DraftOrder | null

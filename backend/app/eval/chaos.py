@@ -17,9 +17,9 @@ from app.eval._harness import apply_loop_policy, mcp_tools_ctx
 
 # 固定候选（模拟 retrieve 召回，3 SKU）
 CANDIDATES = [
-    {"sku_id": "SKU0001", "title": "简约 925银 项链", "category": "项链", "attributes": {"材质": "925银", "风格": "简约"}},
-    {"sku_id": "SKU0006", "title": "浪漫 玫瑰金 项链", "category": "项链", "attributes": {"材质": "玫瑰金", "风格": "浪漫"}},
-    {"sku_id": "SKU0008", "title": "简约 18K金 项链", "category": "项链", "attributes": {"材质": "18K金", "风格": "简约"}},
+    {"sku_id": "SKU0001", "title": "黑色 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "黑色", "风格": "简约", "材质": "纯棉", "场景": "周末"}},
+    {"sku_id": "SKU0007", "title": "白色 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "白色", "风格": "简约", "材质": "纯棉", "场景": "周末"}},
+    {"sku_id": "SKU0013", "title": "深蓝 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "深蓝", "风格": "简约", "材质": "纯棉", "场景": "周末"}},
 ]
 
 PLATFORMS = ["jd", "taobao", "pdd"]
@@ -70,7 +70,9 @@ async def _run_e2e(tools: dict, trials: int) -> tuple[int, list[float]]:
     cfg = {"configurable": {"mcp_tools": tools}}
     for _ in range(trials):
         state = {
-            "messages": [], "preferences": {}, "intent": "", "needs_action": "",
+            "messages": [], "preferences": {}, "profile_preferences": {}, "memory_events": [],
+            "intent": "", "needs_action": "", "clarify_question": "", "reply": "",
+            "zdm_mode": False,
             "candidates": CANDIDATES, "quotes": [], "normalized": [],
             "degraded_sources": [], "recommendation": {},
             "draft_order": None, "order": None,

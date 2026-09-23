@@ -16,7 +16,7 @@ async function send(): Promise<void> {
 <template>
   <textarea
     v-model="text"
-    placeholder="描述你的购物需求，例如：给女朋友买条简约的项链，预算 2000…"
+    placeholder="描述你的购物需求，例如：我要买一条黑色牛仔裤，预算 200…"
     aria-label="输入购物需求"
     @keydown.enter.exact.prevent="send"
   ></textarea>

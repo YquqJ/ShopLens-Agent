@@ -4,7 +4,7 @@
     {
       "id": "g1_基本三源比价_pdd最便宜",
       "candidates": [
-        {"sku_id": "SKU0001", "title": "简约 925银 项链", "category": "项链", "attributes": {"材质": "925银", "风格": "简约"}}
+        {"sku_id": "SKU0001", "title": "黑色 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "黑色", "风格": "简约", "材质": "纯棉", "场景": "周末"}}
       ],
       "quotes": [
         {"sku_id": "SKU0001", "platform": "jd", "price": 1000, "coupon": {"amount": 50, "threshold": 200}, "shipping_fee": 0, "eta_days": 1},
@@ -16,7 +16,7 @@
     {
       "id": "g2_满减门槛未达_券失效_含无券平台",
       "candidates": [
-        {"sku_id": "SKU0002", "title": "复古 玫瑰金 手链", "category": "手链", "attributes": {"材质": "玫瑰金", "风格": "复古"}}
+        {"sku_id": "SKU0002", "title": "白色 通勤 亚麻 约会 衬衫", "category": "衬衫", "attributes": {"颜色": "白色", "风格": "通勤", "材质": "亚麻", "场景": "约会"}}
       ],
       "quotes": [
         {"sku_id": "SKU0002", "platform": "jd", "price": 500, "coupon": {"amount": 200, "threshold": 800}, "shipping_fee": 0, "eta_days": 2},
@@ -28,7 +28,7 @@
     {
       "id": "g3_运费计入到手价_标价低不必然胜",
       "candidates": [
-        {"sku_id": "SKU0003", "title": "时尚 18K金 戒指", "category": "戒指", "attributes": {"材质": "18K金", "风格": "时尚"}}
+        {"sku_id": "SKU0003", "title": "深蓝 运动 纯棉 运动 卫衣", "category": "卫衣", "attributes": {"颜色": "深蓝", "风格": "运动", "材质": "纯棉", "场景": "运动"}}
       ],
       "quotes": [
         {"sku_id": "SKU0003", "platform": "jd", "price": 1980, "coupon": {"amount": 100, "threshold": 1500}, "shipping_fee": 0, "eta_days": 2},
@@ -40,7 +40,7 @@
     {
       "id": "g4_时效折算翻转_贵但快可胜便宜但慢",
       "candidates": [
-        {"sku_id": "SKU0004", "title": "简约 黄金 耳环", "category": "耳环", "attributes": {"材质": "黄金", "风格": "简约"}}
+        {"sku_id": "SKU0004", "title": "米白 简约 羊毛 通勤 外套", "category": "外套", "attributes": {"颜色": "米白", "风格": "简约", "材质": "羊毛", "场景": "通勤"}}
       ],
       "quotes": [
         {"sku_id": "SKU0004", "platform": "jd", "price": 1000, "coupon": null, "shipping_fee": 0, "eta_days": 1},
@@ -52,8 +52,8 @@
     {
       "id": "g5_多SKU归一_各出其优_按综合成本排序",
       "candidates": [
-        {"sku_id": "SKU0005", "title": "简约 925银 手链", "category": "手链", "attributes": {"材质": "925银", "风格": "简约"}},
-        {"sku_id": "SKU0006", "title": "浪漫 玫瑰金 项链", "category": "项链", "attributes": {"材质": "玫瑰金", "风格": "浪漫"}}
+        {"sku_id": "SKU0005", "title": "卡其 通勤 亚麻 周末 裤装", "category": "裤装", "attributes": {"颜色": "卡其", "风格": "通勤", "材质": "亚麻", "场景": "周末"}},
+        {"sku_id": "SKU0006", "title": "黑色 运动 网面 运动 鞋", "category": "鞋", "attributes": {"颜色": "黑色", "风格": "运动", "材质": "网面", "场景": "运动"}}
       ],
       "quotes": [
         {"sku_id": "SKU0005", "platform": "jd", "price": 800, "coupon": null, "shipping_fee": 0, "eta_days": 2},
@@ -71,7 +71,7 @@
     {
       "id": "g6_满减门槛刚好达到_边界应减",
       "candidates": [
-        {"sku_id": "SKU0007", "title": "简约 铂金 胸针", "category": "胸针", "attributes": {"材质": "铂金", "风格": "简约"}}
+        {"sku_id": "SKU0007", "title": "白色 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "白色", "风格": "简约", "材质": "纯棉", "场景": "周末"}}
       ],
       "quotes": [
         {"sku_id": "SKU0007", "platform": "jd", "price": 1000, "coupon": {"amount": 50, "threshold": 1000}, "shipping_fee": 0, "eta_days": 1},

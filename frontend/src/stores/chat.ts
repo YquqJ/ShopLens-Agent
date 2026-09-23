@@ -4,13 +4,23 @@
 // 前端把 node/interrupt/done/error 四类事件逐步落到当前 Turn 上，驱动消息气泡 + 比价表 + HITL + Trace 抽屉。
 import { reactive } from 'vue'
 import { defineStore } from 'pinia'
-import { chatStream, deleteConversation, fetchConversation, fetchConversations, recordEvent, resumeStream } from '../api/client'
+import {
+  chatStream,
+  deleteConversation,
+  fetchConversation,
+  fetchConversations,
+  fetchProfilePreferences,
+  recordEvent,
+  resumeStream,
+} from '../api/client'
 import type {
   ConversationDetail,
   DraftOrder,
   NormalizedItem,
   OrderResult,
+  MemoryEvent,
   Preferences,
+  ProfilePreferences,
   Recommendation,
   SSEEvent,
 } from '../api/types'
@@ -56,11 +66,34 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
   route: { label: '意图路由', desc: '判断导购 vs 其他' },
   retrieve: { label: '商品检索', desc: 'Chroma 向量召回候选 SKU' },
   compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
-  normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
+  normalize: { label: 'SKU 归一 + 优选解', desc: '三源报价对齐 + 平台偏好/综合成本择优' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
   confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
   lock_price: { label: '二次询价锁价', desc: '下单前重新报价锁定价格' },
   place_order: { label: '下单落库', desc: '订单写入 PostgreSQL' },
+  load_memory: { label: '读取偏好记忆', desc: '读取已授权的跨会话偏好' },
+  capture_memory: { label: '更新偏好记忆', desc: '仅处理用户明确授权的偏好变更' },
+}
+
+const MEMORY_KEY_LABELS: Record<string, string> = {
+  preferred_colors: '颜色',
+  preferred_styles: '风格',
+  preferred_materials: '材质',
+  preferred_platforms: '平台',
+  avoid_preferences: '避雷项',
+}
+
+function memoryKeysLabel(keys: string[]): string {
+  return keys.map((key) => MEMORY_KEY_LABELS[key] ?? '偏好').join('、')
+}
+
+function memoryEventDescription(event: MemoryEvent | undefined): string {
+  if (!event) return ''
+  if (event.type === 'memory_read') {
+    return event.keys.length ? ` · 已读取：${memoryKeysLabel(event.keys)}` : ' · 暂无已保存偏好'
+  }
+  const action = event.action === 'forget' ? '已遗忘' : '已保存'
+  return event.keys.length ? ` · ${action}：${memoryKeysLabel(event.keys)}` : ''
 }
 
 function newTurn(user: string, ts?: number): Turn {
@@ -161,7 +194,13 @@ export const useChatStore = defineStore('chat', {
       subtitle: '等待输入购物需求',
       turns: [],
     }
-    return { sessions: [first], activeId: first.id, loadedIds: [] as string[] }
+    return {
+      sessions: [first],
+      activeId: first.id,
+      loadedIds: [] as string[],
+      profilePreferences: {} as ProfilePreferences,
+      memoryEvents: [] as MemoryEvent[],
+    }
   },
   getters: {
     activeSession(state): Session {
@@ -182,6 +221,11 @@ export const useChatStore = defineStore('chat', {
     },
     // 启动时从后端拉会话列表，回填左侧 rail 并加载最近一条
     async hydrate(): Promise<void> {
+      try {
+        await this.refreshProfilePreferences()
+      } catch (e) {
+        console.error('偏好记忆加载失败', e)
+      }
       try {
         const list = await fetchConversations()
         if (!list.length) return
@@ -206,9 +250,18 @@ export const useChatStore = defineStore('chat', {
       try {
         const d = await fetchConversation(id)
         session.turns = hydrateTurns(d)
+        this.profilePreferences = d.profile_preferences ?? {}
+        this.memoryEvents = d.memory_events ?? []
         this.loadedIds.push(id)
       } catch (e) {
         console.error('会话详情加载失败', e)
+      }
+    },
+    async refreshProfilePreferences(): Promise<void> {
+      try {
+        this.profilePreferences = await fetchProfilePreferences()
+      } catch (e) {
+        console.error('偏好记忆加载失败', e)
       }
     },
     // 删除会话：后端删行 + 本地移除；删的是当前会话则切到最近一条或新建空会话
@@ -279,6 +332,14 @@ export const useChatStore = defineStore('chat', {
           turn.preferences = (data.preferences as Preferences) ?? null
           turn.clarifyQuestion = String(data.clarify_question ?? '')
           this.patchSubtitle(session, turn.preferences)
+          break
+        }
+        case 'load_memory':
+        case 'capture_memory': {
+          const memoryEvents = (data.memory_events as MemoryEvent[] | undefined) ?? []
+          if (memoryEvents.length) this.memoryEvents = memoryEvents
+          if (memoryEvents.length) void this.refreshProfilePreferences()
+          pushTrace(turn, node, 'done', memoryEventDescription(memoryEvents.at(-1)))
           break
         }
         case 'route': {

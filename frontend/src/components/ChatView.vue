@@ -72,7 +72,7 @@ watch(() => store.activeSession, scrollToBottom, { deep: true })
     </template>
 
     <div v-if="!store.activeSession.turns.length" class="empty-hint">
-      输入购物需求开始导购，例如：给女朋友买条简约的项链，预算 2000
+      输入购物需求开始导购，例如：我要买一条黑色牛仔裤，预算 200
     </div>
   </div>
 </template>

@@ -1,7 +1,7 @@
 """商品目录服务：seed 生成、向量化、语义检索、存量校验。
 
 职责划分（配合 tools/catalog.py 的 @tool 薄封装）：
-- build_seed_products()：确定性生成 ~100 SKU（首饰 + 3C 多类目，属性/价格/库存），
+- build_seed_products()：确定性生成服饰 SKU（属性/价格/库存），
   价格/库存在此固化，随后写入 Postgres；
 - seed()：SKU 写入 Postgres(products 表) + 向量化进 Chroma(products 集合)；
 - search()：query 先 Chroma 语义检索召回候选，再用 sku_id 回 Postgres 取权威价格/库存；
@@ -32,26 +32,54 @@ COLLECTION_NAME = "products"
 # DashScope text-embedding-v3 单次请求 input 上限（保守取 10），seed 分批灌入
 _EMBED_BATCH = 10
 
-# ---- seed 配置：类目 → (属性维度{键: 候选值}, 基准价) ----
-# 首饰沿用 材质/风格；3C 用品 牌/存储 等。价格 = 基准价 × 0.85~1.15 波动，固定种子保证可复现。
-MATERIALS = ["925银", "18K金", "玫瑰金", "黄金", "铂金"]
-STYLES = ["简约", "复古", "浪漫", "时尚"]
+# ---- seed 配置：服饰类目 → (可复用属性维度, 基准价) ----
+# 四个属性键在类目间保持一致，取值按类目区分，避免不合理的材质组合。
+COLORS = ["黑色", "白色", "深蓝", "米白", "卡其"]
+T_SHIRT_ATTRIBUTES = {
+    "颜色": COLORS,
+    "风格": ["简约", "街头", "运动"],
+    "材质": ["纯棉", "亚麻"],
+    "场景": ["周末", "旅行", "运动"],
+}
+SHIRT_ATTRIBUTES = {
+    "颜色": COLORS,
+    "风格": ["简约", "通勤", "复古"],
+    "材质": ["纯棉", "亚麻", "牛仔"],
+    "场景": ["通勤", "约会", "旅行"],
+}
+SWEATSHIRT_ATTRIBUTES = {
+    "颜色": COLORS,
+    "风格": ["简约", "街头", "运动"],
+    "材质": ["纯棉", "抓绒"],
+    "场景": ["周末", "旅行", "运动"],
+}
+OUTERWEAR_ATTRIBUTES = {
+    "颜色": COLORS,
+    "风格": ["简约", "通勤", "复古"],
+    "材质": ["羊毛", "牛仔", "棉服"],
+    "场景": ["通勤", "旅行", "约会"],
+}
+TROUSER_ATTRIBUTES = {
+    "颜色": COLORS,
+    "风格": ["简约", "通勤", "街头"],
+    "材质": ["纯棉", "亚麻", "牛仔"],
+    "场景": ["通勤", "周末", "旅行"],
+}
+SHOE_ATTRIBUTES = {
+    "颜色": COLORS,
+    "风格": ["简约", "复古", "运动"],
+    "材质": ["真皮", "帆布", "网面"],
+    "场景": ["通勤", "周末", "运动"],
+}
 
-# 每个类目：属性维度（键 → 候选值）+ 基准价（元）
+# 每个类目：统一属性维度 + 基准价（元）
 CATALOG_SPECS: list[tuple[str, dict[str, list[str]], float]] = [
-    # ---- 首饰 ----
-    ("项链", {"材质": MATERIALS, "风格": STYLES}, 1800),
-    ("手链", {"材质": MATERIALS, "风格": STYLES}, 1200),
-    ("戒指", {"材质": MATERIALS, "风格": STYLES}, 1500),
-    ("耳环", {"材质": MATERIALS, "风格": STYLES}, 800),
-    ("手镯", {"材质": MATERIALS, "风格": STYLES}, 1400),
-    ("胸针", {"材质": MATERIALS, "风格": STYLES}, 600),
-    # ---- 3C ----
-    ("手机", {"品牌": ["Apple", "华为", "小米", "OPPO", "vivo", "荣耀"], "存储": ["128G", "256G", "512G", "1T"]}, 4500),
-    ("耳机", {"品牌": ["Apple", "索尼", "Bose", "华为", "小米"], "类型": ["入耳式", "头戴式", "真无线"]}, 900),
-    ("平板", {"品牌": ["Apple", "华为", "小米", "联想"], "存储": ["64G", "128G", "256G"]}, 3200),
-    ("智能手表", {"品牌": ["Apple", "华为", "小米", "Amazfit"], "版本": ["标准版", "运动版"]}, 1600),
-    ("蓝牙音箱", {"品牌": ["索尼", "Bose", "JBL", "小米"], "类型": ["便携", "桌面", "户外"]}, 500),
+    ("T恤", T_SHIRT_ATTRIBUTES, 180),
+    ("衬衫", SHIRT_ATTRIBUTES, 260),
+    ("卫衣", SWEATSHIRT_ATTRIBUTES, 320),
+    ("外套", OUTERWEAR_ATTRIBUTES, 680),
+    ("裤装", TROUSER_ATTRIBUTES, 360),
+    ("鞋", SHOE_ATTRIBUTES, 480),
 ]
 
 
@@ -59,10 +87,16 @@ def build_seed_products(count: int = 200) -> list[dict]:
     """确定性生成 count 条 SKU（固定随机种子，价格/库存可复现）。"""
     rng = random.Random(42)
     products: list[dict] = []
+    category_counts: dict[str, int] = {}
     for i in range(1, count + 1):
         category, dims, base_price = CATALOG_SPECS[(i - 1) % len(CATALOG_SPECS)]
-        # 每属性维度按同一偏移挑候选值，保证同 SKU 属性组合确定
-        attributes = {key: values[(i - 1) % len(values)] for key, values in dims.items()}
+        category_index = category_counts.get(category, 0)
+        category_counts[category] = category_index + 1
+        # 按类目内序号轮转属性，让每个服饰类目都有可测试的颜色/风格/材质/场景覆盖。
+        attributes = {
+            key: values[(category_index + offset) % len(values)]
+            for offset, (key, values) in enumerate(dims.items())
+        }
         price = round(base_price * rng.uniform(0.85, 1.15), 2)
         stock = rng.randint(0, 120)  # 含缺货样本，供 check_stock_price 校验
         sku_id = f"SKU{i:04d}"

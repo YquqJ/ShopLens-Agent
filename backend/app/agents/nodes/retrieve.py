@@ -7,6 +7,7 @@
   跳过 compare/normalize（真实源无跨平台 sku 对齐，且不可喂仿真比价源，否则价格现编）。
 """
 from app.agents.state import AgentState
+from app.agents.nodes.memory import build_effective_preferences
 from app.core.config import settings
 from app.services import catalog
 from app.services import zhidemai as zhidemai_service
@@ -15,8 +16,14 @@ _TOP_K = 5
 
 
 def _build_query(prefs: dict) -> str:
-    """风格/材质/品类拼成查询串（缺省跳过）。"""
-    parts = [str(prefs[k]) for k in ("style", "material", "category") if prefs.get(k)]
+    """当前会话优先，长期偏好只在对应当前字段缺失时补入查询。"""
+    parts = [str(prefs[k]) for k in ("color", "style", "material", "category") if prefs.get(k)]
+    if not prefs.get("color"):
+        parts.extend(str(v) for v in prefs.get("preferred_colors", []) if v)
+    if not prefs.get("style"):
+        parts.extend(str(v) for v in prefs.get("preferred_styles", []) if v)
+    if not prefs.get("material"):
+        parts.extend(str(v) for v in prefs.get("preferred_materials", []) if v)
     return " ".join(parts) if parts else str(prefs.get("category", ""))
 
 
@@ -67,13 +74,17 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
             "attributes": attributes,
             "quotes": [quote],
             "best": quote,
+            "cost_best": quote,
+            "best_strategy": "lowest_total_cost",
             "final_price": price,
         })
     return normalized
 
 
 async def retrieve_node(state: AgentState) -> dict:
-    prefs = state.get("preferences") or {}
+    prefs = build_effective_preferences(
+        state.get("preferences") or {}, state.get("profile_preferences") or {},
+    )
 
     if _zhidemai_enabled():
         # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话

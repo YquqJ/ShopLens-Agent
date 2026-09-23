@@ -7,7 +7,7 @@
 """
 from sqlalchemy import func, select
 
-from app.db.models import ConversionEvent, Order, Product
+from app.db.models import ConversionEvent, Conversation, Order, Product, User
 from app.db.session import async_session_factory
 from app.services.order import ensure_conversation
 
@@ -15,11 +15,16 @@ from app.services.order import ensure_conversation
 EVENT_TYPES = ("impression", "click", "order")
 
 
-async def record_event(thread_id: str, event_type: str, sku_id: str | None = None) -> dict:
+async def record_event(
+    thread_id: str,
+    profile_key: str,
+    event_type: str,
+    sku_id: str | None = None,
+) -> dict:
     """按 thread_id 归因写入一条转化事件；非法类型抛 ValueError（不静默）。"""
     if event_type not in EVENT_TYPES:
         raise ValueError(f"未知事件类型 {event_type!r}，应为 {EVENT_TYPES}")
-    conversation_id = await ensure_conversation(thread_id)
+    conversation_id = await ensure_conversation(thread_id, profile_key)
     async with async_session_factory() as session:
         ev = ConversionEvent(
             conversation_id=conversation_id, event_type=event_type, sku_id=sku_id
@@ -35,7 +40,7 @@ async def record_event(thread_id: str, event_type: str, sku_id: str | None = Non
         }
 
 
-async def funnel_stats() -> dict:
+async def funnel_stats(profile_key: str) -> dict:
     """漏斗统计：曝光/点击/成交三段计数 + 点击率/成交率（相对曝光）+ 成交明细。
 
     曝光/点击来自前端埋点（点击只统计👍推荐品）；成交来自 orders 表中购买首推的下单。
@@ -43,6 +48,9 @@ async def funnel_stats() -> dict:
     async with async_session_factory() as session:
         result = await session.execute(
             select(ConversionEvent.event_type, func.count())
+            .join(Conversation, ConversionEvent.conversation_id == Conversation.id)
+            .join(User, Conversation.user_id == User.id)
+            .where(User.external_id == profile_key)
             .group_by(ConversionEvent.event_type)
         )
         counts = {et: n for et, n in result.all()}
@@ -50,8 +58,14 @@ async def funnel_stats() -> dict:
         rows = (
             await session.execute(
                 select(Order, Product.title)
+                .join(Conversation, Order.conversation_id == Conversation.id)
+                .join(User, Conversation.user_id == User.id)
                 .join(Product, Product.sku_id == Order.sku_id)
-                .where(Order.status == "placed", Order.is_recommended.is_(True))
+                .where(
+                    User.external_id == profile_key,
+                    Order.status == "placed",
+                    Order.is_recommended.is_(True),
+                )
                 .order_by(Order.id.desc())
             )
         ).all()

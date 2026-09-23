@@ -11,8 +11,10 @@
 from langchain_core.messages import BaseMessage
 from sqlalchemy import delete, select
 
-from app.db.models import ConversionEvent, Conversation, Order
+from app.db.models import ConversionEvent, Conversation, Order, User
 from app.db.session import async_session_factory
+from app.services import profile
+from app.services.order import require_conversation_owner
 
 
 def _text(content) -> str:
@@ -54,11 +56,14 @@ def _title_subtitle(values: dict) -> tuple[str, str]:
     return title, " · ".join(parts) or "等待输入购物需求"
 
 
-async def list_conversations(graph) -> list[dict]:
+async def list_conversations(graph, profile_id: str) -> list[dict]:
     """会话列表：按最近更新排序，标题/副标题从各自最新快照反推。"""
     async with async_session_factory() as session:
         result = await session.execute(
-            select(Conversation).order_by(Conversation.updated_at.desc())
+            select(Conversation)
+            .join(User, Conversation.user_id == User.id)
+            .where(User.external_id == profile_id)
+            .order_by(Conversation.updated_at.desc())
         )
         convs = result.scalars().all()
     out = []
@@ -74,8 +79,12 @@ async def list_conversations(graph) -> list[dict]:
     return out
 
 
-async def get_conversation(graph, thread_id: str) -> dict:
+async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | None:
     """会话详情：最新快照的消息全文 + 结构化结果（供前端重建 turns）。"""
+    try:
+        await require_conversation_owner(thread_id, profile_id)
+    except (PermissionError, ValueError):
+        return None
     snap = await graph.aget_state({"configurable": {"thread_id": thread_id}})
     values = snap.values or {}
     rec = values.get("recommendation") or {}
@@ -86,9 +95,12 @@ async def get_conversation(graph, thread_id: str) -> dict:
         val = snap.interrupts[0].value
         if isinstance(val, dict) and val.get("type") == "confirm_order":
             draft = val.get("draft_order") or draft
+    current_profile = await profile.get_preferences(profile_id)
     return {
         "messages": _serialize_messages(values.get("messages", [])),
         "preferences": values.get("preferences") or {},
+        "profile_preferences": current_profile,
+        "memory_events": values.get("memory_events") or [],
         "normalized": values.get("normalized") or [],
         "recommendation": rec or None,
         "draft_order": draft,
@@ -98,11 +110,16 @@ async def get_conversation(graph, thread_id: str) -> dict:
     }
 
 
-async def delete_conversation(graph, thread_id: str) -> bool:
+async def delete_conversation(graph, thread_id: str, profile_id: str) -> bool:
     """删除会话：清关联转化事件/订单 → 删会话行 → 删 checkpointer 线程状态。"""
     async with async_session_factory() as session:
         result = await session.execute(
-            select(Conversation).where(Conversation.thread_id == thread_id)
+            select(Conversation)
+            .join(User, Conversation.user_id == User.id)
+            .where(
+                Conversation.thread_id == thread_id,
+                User.external_id == profile_id,
+            )
         )
         conv = result.scalar_one_or_none()
         if conv is None:

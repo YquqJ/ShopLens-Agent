@@ -4,21 +4,14 @@ import { useChatStore } from '../stores/chat'
 
 const store = useChatStore()
 
-const prefs = computed(() => {
-  const last = store.activeSession.turns
-    .map((t) => t.preferences)
-    .filter(Boolean)
-    .at(-1)
-  return last ?? null
-})
-
 const prefTags = computed(() => {
-  if (!prefs.value) return []
+  const prefs = store.profilePreferences
   const tags: string[] = []
-  if (prefs.value.scene) tags.push(prefs.value.scene)
-  if (prefs.value.material) tags.push(prefs.value.material)
-  if (prefs.value.budget) tags.push(`预算 ≤ ¥${prefs.value.budget}`)
-  if (prefs.value.style) tags.push(prefs.value.style)
+  if (prefs.preferred_colors?.length) tags.push(`颜色：${prefs.preferred_colors.join('、')}`)
+  if (prefs.preferred_styles?.length) tags.push(`风格：${prefs.preferred_styles.join('、')}`)
+  if (prefs.preferred_materials?.length) tags.push(`材质：${prefs.preferred_materials.join('、')}`)
+  if (prefs.preferred_platforms?.length) tags.push(`平台：${prefs.preferred_platforms.join('、')}`)
+  if (prefs.avoid_preferences?.length) tags.push(`避雷：${prefs.avoid_preferences.join('、')}`)
   return tags
 })
 </script>
@@ -46,9 +39,9 @@ const prefTags = computed(() => {
       </div>
     </div>
     <div class="profile-card">
-      <h5>已理解偏好</h5>
+      <h5>跨会话偏好记忆</h5>
       <div class="pf-tags">
-        <span v-if="!prefTags.length" style="font-size:12.5px;color:var(--muted-fg)">对话后自动提取</span>
+        <span v-if="!prefTags.length" style="font-size:12.5px;color:var(--muted-fg)">尚无已保存偏好</span>
         <span v-for="t in prefTags" :key="t" class="pf-tag">{{ t }}</span>
       </div>
     </div>

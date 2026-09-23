@@ -10,7 +10,18 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -55,6 +66,28 @@ class Conversation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     thread_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProfileMemory(Base):
+    """单个用户画像字段的长期偏好及其写入来源。"""
+
+    __tablename__ = "profile_memories"
+    __table_args__ = (
+        UniqueConstraint("profile_key", "key", name="uq_profile_memories_profile_key_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_key: Mapped[str] = mapped_column(String(64), index=True)
+    key: Mapped[str] = mapped_column(String(64))
+    value: Mapped[object] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(64), default="explicit_command")
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

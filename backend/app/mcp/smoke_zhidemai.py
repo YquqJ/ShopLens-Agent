@@ -33,7 +33,7 @@ async def main() -> None:
     async with client.session("zhidemai") as session:
         tools = await load_mcp_tools(session, server_name="zhidemai", tool_name_prefix=True)
         tool = tools[0]
-        result = await tool.ainvoke({"product_query": "iphone16", "size": 3})
+        result = await tool.ainvoke({"product_query": "简约纯棉通勤衬衫", "size": 3})
 
     # MCP 工具结果可能是 [{'type':'text','text':'<json>'}] 或 str，统一解析
     if isinstance(result, list) and result and isinstance(result[0], dict):

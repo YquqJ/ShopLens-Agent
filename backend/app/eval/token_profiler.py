@@ -24,20 +24,20 @@ from app.eval._harness import apply_loop_policy, mcp_tools_ctx
 
 # 固定候选（模拟 retrieve 召回结果，3 条同品类 SKU）
 FIXTURE = [
-    {"sku_id": "SKU0001", "title": "简约 925银 项链", "category": "项链", "attributes": {"材质": "925银", "风格": "简约"}},
-    {"sku_id": "SKU0006", "title": "浪漫 玫瑰金 项链", "category": "项链", "attributes": {"材质": "玫瑰金", "风格": "浪漫"}},
-    {"sku_id": "SKU0008", "title": "简约 18K金 项链", "category": "项链", "attributes": {"材质": "18K金", "风格": "简约"}},
+    {"sku_id": "SKU0001", "title": "黑色 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "黑色", "风格": "简约", "材质": "纯棉", "场景": "周末"}},
+    {"sku_id": "SKU0007", "title": "白色 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "白色", "风格": "简约", "材质": "纯棉", "场景": "周末"}},
+    {"sku_id": "SKU0013", "title": "深蓝 简约 纯棉 周末 T恤", "category": "T恤", "attributes": {"颜色": "深蓝", "风格": "简约", "材质": "纯棉", "场景": "周末"}},
 ]
 
 # 固定会话集（均为「品类+预算齐备」的成熟句，直接走到推荐）
 SESSIONS = [
-    "给女朋友买项链，预算2000，喜欢简约",
-    "想买条项链送对象，3000以内，要复古风",
-    "预算2500，买个浪漫一点的项链",
+    "想买通勤T恤，预算200，喜欢简约黑色",
+    "周末穿的T恤，300以内，要深蓝色纯棉",
+    "预算250，买件简约风T恤去旅行",
 ]
 
 # 代表性偏好（供「裁剪前/后」上下文 token 对照）
-SAMPLE_PREFS = {"category": "项链", "budget": 2000.0, "style": "简约"}
+SAMPLE_PREFS = {"category": "T恤", "budget": 200.0, "style": "简约", "color": "黑色", "material": "纯棉"}
 
 # M5 全量基线（实测，用于对照）
 BASELINE_TOTAL = 755
@@ -106,7 +106,9 @@ def _patch_nodes() -> None:
 def _state(message: str) -> AgentState:
     return {
         "messages": [HumanMessage(message)],
-        "preferences": {}, "intent": "", "needs_action": "",
+        "preferences": {}, "profile_preferences": {}, "memory_events": [],
+        "intent": "", "needs_action": "", "clarify_question": "", "reply": "",
+        "zdm_mode": False,
         "candidates": [], "quotes": [], "normalized": [], "degraded_sources": [],
         "recommendation": {}, "draft_order": None, "order": None,
         "lock_attempts": 0, "price_raised": False, "hop_count": 0,

@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.db.models import Conversation, Order
+from app.db.models import Conversation, Order, User
 from app.db.session import async_session_factory
 
 
@@ -18,16 +18,36 @@ def _dec(v: float | None) -> Decimal | None:
     return Decimal(str(v)) if v is not None else None
 
 
-async def ensure_conversation(thread_id: str) -> int:
-    """按 thread_id 取/建会话，返回 conversation.id。"""
+def _profile_key(profile_key: str) -> str:
+    value = (profile_key or "").strip()
+    if not value:
+        raise ValueError("profile_id 不能为空")
+    return value
+
+
+async def _get_or_create_user(session, profile_key: str) -> User:
+    user = await session.scalar(select(User).where(User.external_id == profile_key))
+    if user is None:
+        user = User(external_id=profile_key)
+        session.add(user)
+        await session.flush()
+    return user
+
+
+async def ensure_conversation(thread_id: str, profile_key: str) -> int:
+    """按 thread/profile 取建会话，确保已有会话不能被其他画像接管。"""
+    profile_key = _profile_key(profile_key)
     async with async_session_factory() as session:
+        user = await _get_or_create_user(session, profile_key)
         result = await session.execute(
             select(Conversation).where(Conversation.thread_id == thread_id)
         )
         conv = result.scalar_one_or_none()
         if conv is None:
-            conv = Conversation(thread_id=thread_id)
+            conv = Conversation(thread_id=thread_id, user_id=user.id)
             session.add(conv)
+        elif conv.user_id != user.id:
+            raise PermissionError("会话不属于当前浏览器画像")
         else:
             # 会话活跃即刷新更新时间，供会话列表按最近互动排序
             conv.updated_at = datetime.now(timezone.utc)
@@ -36,9 +56,31 @@ async def ensure_conversation(thread_id: str) -> int:
         return conv.id
 
 
-async def place_order(draft: dict, thread_id: str, is_recommended: bool = False) -> dict:
+async def require_conversation_owner(thread_id: str, profile_key: str) -> int:
+    """返回当前画像拥有的会话 ID；不存在或 owner 不匹配均拒绝。"""
+    profile_key = _profile_key(profile_key)
+    async with async_session_factory() as session:
+        conversation_id = await session.scalar(
+            select(Conversation.id)
+            .join(User, Conversation.user_id == User.id)
+            .where(
+                Conversation.thread_id == thread_id,
+                User.external_id == profile_key,
+            )
+        )
+    if conversation_id is None:
+        raise PermissionError("会话不存在或不属于当前浏览器画像")
+    return conversation_id
+
+
+async def place_order(
+    draft: dict,
+    thread_id: str,
+    profile_key: str,
+    is_recommended: bool = False,
+) -> dict:
     """落库生成已下单订单（status=placed），金额固化；is_recommended 标记是否购买首推。"""
-    conversation_id = await ensure_conversation(thread_id)
+    conversation_id = await ensure_conversation(thread_id, profile_key)
     async with async_session_factory() as session:
         order = Order(
             conversation_id=conversation_id,

@@ -16,17 +16,23 @@ from app.core.config import settings
 from app.core.loop import install_selector_event_loop_policy
 from app.mcp import adapter
 
-QUERY = "给女朋友买项链，预算2000，喜欢简约"
+QUERY = "想买通勤衬衫，预算500，喜欢简约深蓝和亚麻"
 
 
 def _initial_state() -> AgentState:
     return {
         "messages": [HumanMessage(QUERY)],
         "preferences": {},
+        "profile_preferences": {},
+        "memory_events": [],
         "intent": "",
         "needs_action": "",
+        "clarify_question": "",
+        "reply": "",
         "candidates": [],
+        "zdm_mode": False,
         "quotes": [],
+        "degraded_sources": [],
         "normalized": [],
         "recommendation": {},
         "draft_order": None,

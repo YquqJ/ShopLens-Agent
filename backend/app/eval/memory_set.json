@@ -1,0 +1,80 @@
+{
+  "cases": [
+    {
+      "id": "explicit_write",
+      "profile_key": "profile-a",
+      "initial_profiles": {"profile-a": {}},
+      "message": "请记住我喜欢黑色和简约风，以后优先淘宝",
+      "expected_command": {
+        "preferred_colors": ["黑色"],
+        "preferred_styles": ["简约"],
+        "preferred_platforms": ["淘宝"]
+      },
+      "expected_profiles": {
+        "profile-a": {
+          "preferred_colors": ["黑色"],
+          "preferred_styles": ["简约"],
+          "preferred_platforms": ["淘宝"]
+        }
+      }
+    },
+    {
+      "id": "temporary_session_rejected",
+      "profile_key": "profile-a",
+      "initial_profiles": {
+        "profile-a": {"preferred_colors": ["黑色"]}
+      },
+      "message": "这次优先推荐蓝色外套，预算500",
+      "expected_command": {},
+      "expected_profiles": {
+        "profile-a": {"preferred_colors": ["黑色"]}
+      }
+    },
+    {
+      "id": "remove_value_preserves_siblings",
+      "profile_key": "profile-a",
+      "initial_profiles": {
+        "profile-a": {"preferred_colors": ["黑色", "白色", "深蓝"]}
+      },
+      "message": "忘记我的颜色偏好中的黑色和深蓝",
+      "expected_command": {
+        "remove_values": {"preferred_colors": ["黑色", "深蓝"]}
+      },
+      "expected_profiles": {
+        "profile-a": {"preferred_colors": ["白色"]}
+      }
+    },
+    {
+      "id": "forget_full_field",
+      "profile_key": "profile-a",
+      "initial_profiles": {
+        "profile-a": {
+          "preferred_colors": ["黑色"],
+          "preferred_materials": ["纯棉", "亚麻"]
+        }
+      },
+      "message": "请忘记我的材质偏好",
+      "expected_command": {"forget": ["preferred_materials"]},
+      "expected_profiles": {
+        "profile-a": {"preferred_colors": ["黑色"]}
+      }
+    },
+    {
+      "id": "profile_isolation",
+      "profile_key": "profile-a",
+      "initial_profiles": {
+        "profile-a": {"preferred_colors": ["黑色"]},
+        "profile-b": {"preferred_platforms": ["京东"]}
+      },
+      "message": "请更新我的风格偏好为复古",
+      "expected_command": {"preferred_styles": ["复古"]},
+      "expected_profiles": {
+        "profile-a": {
+          "preferred_colors": ["黑色"],
+          "preferred_styles": ["复古"]
+        },
+        "profile-b": {"preferred_platforms": ["京东"]}
+      }
+    }
+  ]
+}
