@@ -17,8 +17,8 @@ class MemoryEventGraph:
         }
         yield {
             "capture_memory": {
-                "profile_preferences": {"preferred_platforms": ["秘密淘宝"]},
-                "memory_events": [{"type": "memory_write", "action": "write", "keys": ["preferred_platforms"]}],
+                "profile_preferences": {"preferred_materials": ["秘密羊毛"]},
+                "memory_events": [{"type": "memory_write", "action": "write", "keys": ["preferred_materials"]}],
             }
         }
 
@@ -38,4 +38,4 @@ async def test_memory_node_sse_excludes_profile_preference_values() -> None:
     assert [payload["node"] for payload in node_payloads] == ["load_memory", "capture_memory"]
     assert all("profile_preferences" not in payload for payload in node_payloads)
     assert "秘密黑" not in "".join(frames)
-    assert "秘密淘宝" not in "".join(frames)
+    assert "秘密羊毛" not in "".join(frames)

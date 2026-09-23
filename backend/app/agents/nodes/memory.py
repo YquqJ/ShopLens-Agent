@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app.agents.state import AgentState
 from app.services import profile
+from app.services.memory import DURABLE_MEMORY_KEYS
 
 
 _FIELD_TERMS = {
@@ -13,13 +14,11 @@ _FIELD_TERMS = {
     # 通勤同时是商品场景，V1 不将它解析成跨会话风格偏好。
     "preferred_styles": ("简约", "街头", "运动", "复古"),
     "preferred_materials": ("纯棉", "亚麻", "牛仔", "抓绒", "羊毛", "棉服", "真皮", "帆布", "网面"),
-    "preferred_platforms": ("京东", "淘宝", "拼多多"),
 }
 _FIELD_LABELS = {
     "preferred_colors": ("颜色",),
     "preferred_styles": ("风格",),
     "preferred_materials": ("材质",),
-    "preferred_platforms": ("平台",),
     "avoid_preferences": ("避雷", "不喜欢"),
 }
 
@@ -71,7 +70,7 @@ def build_effective_preferences(session_preferences: dict, profile_preferences: 
     """合成推荐上下文，保留会话值为高优先级、画像值为低优先级默认。"""
     effective = dict(session_preferences or {})
     for key, value in (profile_preferences or {}).items():
-        if value not in (None, "", []):
+        if key in DURABLE_MEMORY_KEYS and value not in (None, "", []):
             effective[key] = value
     return effective
 

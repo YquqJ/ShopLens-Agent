@@ -42,8 +42,6 @@ export interface NormalizedItem {
   attributes: Record<string, string>
   quotes: Quote[]
   best: Quote
-  cost_best: Quote
-  best_strategy: 'preferred_platform' | 'lowest_total_cost'
   final_price: number
 }
 
@@ -107,7 +105,6 @@ export interface ProfilePreferences {
   preferred_colors?: string[]
   preferred_styles?: string[]
   preferred_materials?: string[]
-  preferred_platforms?: string[]
   avoid_preferences?: string[]
 }
 

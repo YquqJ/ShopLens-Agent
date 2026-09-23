@@ -32,7 +32,10 @@ async def lock_price_node(state: AgentState, config: RunnableConfig) -> dict:
     tools = config["configurable"]["mcp_tools"]
     price_tool = tools[f"{_SERVER[draft['platform']]}_get_quote"]
 
-    p = _unwrap(await price_tool.ainvoke({"sku_id": draft["sku_id"]}))
+    request = {"sku_id": draft["sku_id"]}
+    if draft.get("catalog_price") is not None:
+        request["base_price"] = draft["catalog_price"]
+    p = _unwrap(await price_tool.ainvoke(request))
     new_price = p["price"]
     new_final = round(new_price - draft.get("discount", 0) + draft.get("shipping_fee", 0), 2)
     raised = new_final > draft["final_price"]

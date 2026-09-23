@@ -40,10 +40,11 @@ async def compare_node(state: AgentState, config: RunnableConfig) -> dict:
     degraded: set[str] = set()
     for cand in state.get("candidates", []):
         sku = cand["sku_id"]
+        base_price = cand.get("price")
         for platform, price_tool_name in PRICE_TOOL.items():
             try:
-                p = _unwrap(await tools[price_tool_name].ainvoke({"sku_id": sku}))
-                c = _unwrap(await tools[COUPON_TOOL].ainvoke({"sku_id": sku, "platform": platform}))
+                p = _unwrap(await tools[price_tool_name].ainvoke({"sku_id": sku, "base_price": base_price}))
+                c = _unwrap(await tools[COUPON_TOOL].ainvoke({"sku_id": sku, "platform": platform, "base_price": base_price}))
                 lg = _unwrap(await tools[LOGISTICS_TOOL].ainvoke({"sku_id": sku, "platform": platform}))
             except SourceError:
                 degraded.add(platform)  # 该平台暂不可比，跳过并继续其余源

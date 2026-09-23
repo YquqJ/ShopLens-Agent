@@ -38,7 +38,9 @@ def _after_retrieve(state: AgentState) -> str:
 
 def _after_recommend(state: AgentState) -> str:
     # 真实源无下单闭环（不可对真实商品走仿真二次询价），推荐后即结束
-    return "end" if state.get("zdm_mode") else "confirm"
+    if state.get("zdm_mode") or not (state.get("recommendation") or {}).get("items"):
+        return "end"
+    return "confirm"
 
 
 def _after_confirm(state: AgentState) -> str:

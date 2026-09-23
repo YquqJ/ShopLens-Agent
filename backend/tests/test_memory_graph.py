@@ -17,7 +17,6 @@ def test_parse_memory_command_saves_only_explicit_durable_catalog_preferences() 
         "preferred_colors": ["黑色"],
         "preferred_styles": ["简约"],
         "preferred_materials": ["纯棉"],
-        "preferred_platforms": ["淘宝"],
     }
 
 
@@ -26,7 +25,6 @@ def test_parse_memory_command_updates_only_unambiguous_durable_values() -> None:
 
     assert command == {
         "preferred_styles": ["复古"],
-        "preferred_platforms": ["淘宝"],
     }
     assert "budget" not in command
     assert "scene" not in command
@@ -66,11 +64,11 @@ def test_parse_memory_command_treats_commute_as_session_scene_not_durable_style(
     assert parse_memory_command("请更新我的风格偏好为通勤") == {}
 
 
-def test_current_session_preference_overrides_loaded_profile_memory() -> None:
+def test_effective_preferences_ignore_retired_platform_memory() -> None:
     loaded = {
         "preferred_colors": ["黑色", "深蓝"],
         "preferred_styles": ["简约"],
-        "preferred_platforms": ["淘宝"],
+        "preferred_platforms": ["淘宝"],  # legacy persisted row
     }
     session = {"category": "衬衫", "budget": 400, "style": "通勤", "material": "亚麻"}
 
@@ -81,7 +79,6 @@ def test_current_session_preference_overrides_loaded_profile_memory() -> None:
         "material": "亚麻",
         "preferred_colors": ["黑色", "深蓝"],
         "preferred_styles": ["简约"],
-        "preferred_platforms": ["淘宝"],
     }
 
 

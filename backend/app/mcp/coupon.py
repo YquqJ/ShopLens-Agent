@@ -7,16 +7,17 @@ mcp = FastMCP("coupon")
 
 
 @mcp.tool()
-def get_coupons(sku_id: str, platform: str) -> dict:
+def get_coupons(sku_id: str, platform: str, base_price: float | None = None) -> dict:
     """查询某平台该 SKU 可用的优惠券。
 
     Args:
         sku_id: 商品 SKU 编号，如 SKU0001。
         platform: 平台，jd / taobao / pdd。
+        base_price: 商品主库基准价（元），用于生成与当前报价匹配的满减门槛。
     """
     if _sim.should_fail("coupon"):
         raise RuntimeError("优惠券源暂时不可用（模拟下游故障）")
-    price = _sim.market_price(sku_id)
+    price = float(base_price) if base_price is not None and base_price > 0 else _sim.market_price(sku_id)
     rng = _sim.rng_for(sku_id, platform)
     if rng.random() < 0.25:
         coupon = None  # 小概率无券

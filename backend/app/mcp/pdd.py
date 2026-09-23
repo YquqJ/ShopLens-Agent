@@ -7,18 +7,19 @@ mcp = FastMCP("price_pdd")
 
 
 @mcp.tool()
-def get_quote(sku_id: str) -> dict:
+def get_quote(sku_id: str, base_price: float | None = None) -> dict:
     """查询拼多多平台该 SKU 的实时报价。
 
     Args:
         sku_id: 商品 SKU 编号，如 SKU0001。
+        base_price: 商品主库基准价（元），用于生成同一商品的跨平台报价。
     """
     if _sim.should_fail("pdd"):
         raise RuntimeError("拼多多比价源暂时不可用（模拟下游故障）")
     return {
         "platform": "pdd",
         "sku_id": sku_id,
-        "price": _sim.quote(sku_id, "pdd"),
+        "price": _sim.quote(sku_id, "pdd", base_price=base_price),
         "currency": "CNY",
     }
 

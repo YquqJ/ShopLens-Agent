@@ -31,12 +31,10 @@ _SYSTEM = "你是电商导购。基于给定候选商品数据，为每条写一
 
 
 def select_top(normalized: list[dict], budget: float | None) -> list[dict]:
-    """非 LLM 预算过滤：best 到手价 ≤ 预算；无预算或过滤后为空则退回全部，取前 _TOP_N。"""
+    """非 LLM 预算过滤：有预算时只保留到手价不高于预算的商品。"""
     pool = normalized
-    if budget:
-        within = [i for i in normalized if i["best"]["final_price"] <= budget]
-        if within:
-            pool = within
+    if budget is not None:
+        pool = [i for i in normalized if i["best"]["final_price"] <= budget]
     return pool[:_TOP_N]
 
 
@@ -60,7 +58,6 @@ def _fmt_prefs(prefs: dict) -> str:
         ("preferred_colors", "长期颜色", "color"),
         ("preferred_styles", "长期风格", "style"),
         ("preferred_materials", "长期材质", "material"),
-        ("preferred_platforms", "长期平台", None),
         ("avoid_preferences", "长期避雷", None),
     ]
     for key, label, current_key in defaults:
@@ -98,6 +95,20 @@ async def recommend_node(state: AgentState) -> dict:
         state.get("preferences") or {}, state.get("profile_preferences") or {},
     )
     top = select_top(normalized, prefs.get("budget"))
+    if not top:
+        budget = prefs.get("budget")
+        summary = (
+            f"当前召回商品的到手价均高于预算 ¥{budget:g}，请提高预算或调整品类、风格、材质等条件。"
+            if budget is not None
+            else "当前没有可推荐商品，请调整购物条件后再试。"
+        )
+        return {
+            "recommendation": {
+                "summary": summary,
+                "items": [],
+                "degraded_sources": state.get("degraded_sources", []),
+            }
+        }
     user = build_user(prefs, top, state.get("degraded_sources", []), compact=True)
 
     structured = get_llm().with_structured_output(RecommendResult)

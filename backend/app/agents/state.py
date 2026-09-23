@@ -13,14 +13,28 @@ from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import HumanMessage
 
+_RESET_SESSION_PREFERENCES = "__reset_session_preferences__"
+
 
 def merge_preferences(a: dict, b: dict) -> dict:
     """跨轮累积偏好：b 的非空字段覆盖 a（历史已确认信息不回退）。"""
+    if b.get(_RESET_SESSION_PREFERENCES):
+        return {
+            key: value
+            for key, value in b.items()
+            if key != _RESET_SESSION_PREFERENCES and value not in (None, "", [])
+        }
     merged = dict(a or {})
     for k, v in (b or {}).items():
         if v not in (None, "", []):
             merged[k] = v
     return merged
+
+
+def is_completed_order(state: dict) -> bool:
+    """只有成功下单才会在下一条聊天消息开始新的导购上下文。"""
+    order = state.get("order") if isinstance(state, dict) else None
+    return isinstance(order, dict) and order.get("status") == "placed"
 
 
 class AgentState(TypedDict):
@@ -45,11 +59,11 @@ class AgentState(TypedDict):
     hop_count: int
 
 
-def initial_state(message: str) -> AgentState:
+def initial_state(message: str, *, reset_preferences: bool = False) -> AgentState:
     """构造初始状态（首轮用户消息 + 各字段默认值）。"""
     return {
         "messages": [HumanMessage(message, additional_kwargs={"ts": time.time()})],
-        "preferences": {},
+        "preferences": {_RESET_SESSION_PREFERENCES: True} if reset_preferences else {},
         "profile_preferences": {},
         "memory_events": [],
         "intent": "",

@@ -2,8 +2,8 @@
 
 设计决策：
 - 三个比价源（jd/taobao/pdd）逻辑同构，抽到本模块避免重复；
-- 报价 = sku_id 确定性市场价 × 平台系数 × 随机波动，不读 Postgres——
-  模拟「第三方平台独立定价」，第三方源只读、无我方主库依赖；
+- 报价 = 商品库基准价 × 平台系数 × 随机波动；
+  compare/lock_price 会传入当前候选的 Postgres price，保证多平台报价围绕同一商品基准价波动；
   （平台系数：jd 1.02 略贵、pdd 0.93 最便宜，贴近真实平台调性）
 - 故障注入走环境变量 SHOPLENS_FAILRATE_<SOURCE>（0~1 概率），
   便于 M2 验收「关掉 1 源复现源故障」，也复用于 M5 chaos / M6 熔断。
@@ -15,7 +15,7 @@ from pathlib import Path
 # 平台相对市场价的系数
 PLATFORM_FACTOR = {"jd": 1.02, "taobao": 0.98, "pdd": 0.93}
 
-# 饰品市场价区间（元）
+# 未传基准价时的兼容回退区间（元）
 _LOW, _HIGH = 300.0, 5000.0
 
 
@@ -33,9 +33,10 @@ def market_price(sku_id: str) -> float:
     return round(rng_for(sku_id).uniform(_LOW, _HIGH), 2)
 
 
-def quote(sku_id: str, platform: str) -> float:
-    """一次报价：市场价 × 平台系数 × (0.98~1.02 随机波动)。"""
-    price = market_price(sku_id) * PLATFORM_FACTOR[platform] * random.uniform(0.98, 1.02)
+def quote(sku_id: str, platform: str, *, base_price: float | None = None) -> float:
+    """一次报价：商品库基准价 × 平台系数 × (0.98~1.02 随机波动)。"""
+    reference = float(base_price) if base_price is not None and base_price > 0 else market_price(sku_id)
+    price = reference * PLATFORM_FACTOR[platform] * random.uniform(0.98, 1.02)
     return round(price, 2)
 
 

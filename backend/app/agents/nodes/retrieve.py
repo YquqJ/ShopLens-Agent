@@ -74,8 +74,6 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
             "attributes": attributes,
             "quotes": [quote],
             "best": quote,
-            "cost_best": quote,
-            "best_strategy": "lowest_total_cost",
             "final_price": price,
         })
     return normalized

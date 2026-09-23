@@ -4,17 +4,11 @@
 - v0 的 MCP 源按我方 canonical sku_id 报价，故「归一」= 按 sku_id 把三平台报价聚成一条；
   真实跨源的标题/属性相似对齐（不同平台不同 sku id）留到需要时再加；
 - 到手价 = 价 − 券(满 threshold 才减) + 运费；综合成本再叠加时效折算（每等 1 天折合 ¥10）；
-- 默认最优解 = 综合成本最低的平台；若用户明确保存了平台优先级，则优先选可比的首选平台。
+- 最优解 = 综合成本最低的平台；权重 TIME_VALUE_PER_DAY 沉淀 docs/DESIGN_NOTES。
 """
 
 # 时效折算权重（元/天）
 TIME_VALUE_PER_DAY = 10.0
-
-_PROFILE_PLATFORM_IDS = {
-    "京东": "jd",
-    "淘宝": "taobao",
-    "拼多多": "pdd",
-}
 
 
 def _discount(price: float, coupon: dict | None) -> float:
@@ -24,24 +18,8 @@ def _discount(price: float, coupon: dict | None) -> float:
     return coupon["amount"] if price >= coupon["threshold"] else 0.0
 
 
-def _preferred_platform_ids(preferred_platforms: list[str] | None) -> list[str]:
-    """将长期记忆中的中文平台名称转为比价源 ID，保留用户声明顺序。"""
-    if not isinstance(preferred_platforms, list):
-        return []
-    return [
-        _PROFILE_PLATFORM_IDS[platform]
-        for platform in preferred_platforms
-        if platform in _PROFILE_PLATFORM_IDS
-    ]
-
-
-def normalize(
-    quotes: list[dict],
-    candidates: list[dict],
-    *,
-    preferred_platforms: list[str] | None = None,
-) -> list[dict]:
-    """归一报价，并按用户平台偏好或综合成本选出每个 SKU 的优选平台。"""
+def normalize(quotes: list[dict], candidates: list[dict]) -> list[dict]:
+    """把三平台原始报价按 sku_id 归一，附最优解，按综合成本升序返回。"""
     meta = {c["sku_id"]: c for c in candidates}
     by_sku: dict[str, dict] = {}
     for q in quotes:
@@ -54,6 +32,7 @@ def normalize(
                 "title": m.get("title", sku),
                 "category": m.get("category"),
                 "attributes": m.get("attributes", {}),
+                "catalog_price": m.get("price"),
                 "quotes": [],
             }
         discount = round(_discount(q["price"], q["coupon"]), 2)
@@ -69,21 +48,10 @@ def normalize(
             "final_price": final_price,
             "total_cost": total_cost,
         })
-    preferred_ids = _preferred_platform_ids(preferred_platforms)
     result: list[dict] = []
     for item in by_sku.values():
-        cost_best = min(item["quotes"], key=lambda x: x["total_cost"])
-        quotes_by_platform = {quote["platform"]: quote for quote in item["quotes"]}
-        preferred_best = next(
-            (quotes_by_platform[platform] for platform in preferred_ids if platform in quotes_by_platform),
-            None,
-        )
-        best = preferred_best or cost_best
+        best = min(item["quotes"], key=lambda x: x["total_cost"])
         item["best"] = best
-        item["cost_best"] = cost_best
-        item["best_strategy"] = (
-            "preferred_platform" if preferred_best is not None else "lowest_total_cost"
-        )
         item["final_price"] = best["final_price"]
         result.append(item)
     result.sort(key=lambda x: x["best"]["total_cost"])

@@ -103,7 +103,7 @@ textarea { font-family: inherit; }
 .glass { background: rgba(255,255,255,.70); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(214,211,209,.9); border-radius: 18px; box-shadow: var(--shadow); }
 
 /* Candidates */
-.cand-head { font-family: var(--font-display); font-size: 21px; font-weight: 600; margin: 4px 0 2px; }
+.cand-head { font-size: 21px; font-weight: 600; margin: 4px 0 2px; }
 .cand { display: grid; grid-template-columns: 74px 1fr; gap: 16px; padding: 18px; position: relative; cursor: pointer; }
 .cand + .cand { border-top: 1px solid var(--border); }
 .cand .thumb { width: 74px; height: 74px; border-radius: 12px; background: radial-gradient(circle at 30% 28%, rgba(202,138,4,.28), transparent 55%), linear-gradient(135deg,#1c1917,#44403c); display: grid; place-items: center; color: var(--gold-bright); }

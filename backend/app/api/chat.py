@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from app.agents.state import initial_state
+from app.agents.state import initial_state, is_completed_order
 from app.services.order import ensure_conversation, require_conversation_owner
 
 router = APIRouter()
@@ -47,6 +47,13 @@ def _make_cfg(request: Request, thread_id: str, profile_id: str | None = None) -
     return {
         "configurable": configurable
     }
+
+
+async def build_chat_payload(graph, cfg: dict, message: str) -> dict:
+    """下单成功后的下一条用户消息必须开始新的临时导购上下文。"""
+    snapshot = await graph.aget_state(cfg)
+    previous_state = getattr(snapshot, "values", {}) or {}
+    return initial_state(message, reset_preferences=is_completed_order(previous_state))
 
 
 def _safe_node_update(node: str, update: dict) -> dict:
@@ -85,7 +92,8 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
 
     async def gen() -> AsyncGenerator[str, None]:
         try:
-            async for chunk in _stream(graph, cfg, initial_state(req.message), is_resume=False):
+            payload = await build_chat_payload(graph, cfg, req.message)
+            async for chunk in _stream(graph, cfg, payload, is_resume=False):
                 yield chunk
         except Exception as e:  # noqa: BLE001
             yield _sse("error", {"message": str(e)})

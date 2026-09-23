@@ -121,12 +121,11 @@ def test_merge_memory_supports_string_forget_and_empty_updates_are_noops() -> No
 def test_memory_tags_returns_readable_nonempty_preferences() -> None:
     profile = {
         "preferred_colors": ["黑色", "蓝色"],
-        "preferred_platforms": ["淘宝"],
+        "preferred_platforms": ["淘宝"],  # legacy persisted row
         "avoid_preferences": ["聚酯纤维"],
     }
 
     assert memory_tags(profile) == [
         "颜色：黑色、蓝色",
-        "平台：淘宝",
         "避雷：聚酯纤维",
     ]

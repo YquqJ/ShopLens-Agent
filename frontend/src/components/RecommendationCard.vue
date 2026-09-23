@@ -51,15 +51,11 @@ const selectedQuote = computed<Quote | null>(
   () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
 )
 function selectSku(skuId: string): void {
-  // 点卡片 = 选中候选：平台回落到该商品的偏好优选解 + 记录点击（同一轮同 SKU 只记一次）
+  // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
   if (selectedSkuId.value === skuId) return
   selectedSkuId.value = skuId
   selectedPlatform.value = selectedBest.value
   store.trackClick(skuId, props.turn.id)
-}
-
-function bestLabel(item: NormalizedItem): string {
-  return item.best_strategy === 'preferred_platform' ? '偏好优先' : '最优解'
 }
 
 interface HitlSummary { title: string; platform: string; final_price: number; eta_days: number }
@@ -124,14 +120,14 @@ async function cancel(): Promise<void> {
     </div>
 
     <!-- 最优候选多平台比价表 -->
-    <div v-if="activeNormalized" style="padding:0 20px">
+    <div v-if="activeNormalized && !!selectedSkuId" style="padding:0 20px">
       <div class="cmp">
         <div class="cmp-heading">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
           {{ activeNormalized.title }} 多平台比价（SKU 已归一）
         </div>
         <table>
-          <thead><tr><th>平台</th><th>标价</th><th>优惠券</th><th>物流</th><th style="text-align:right">到手价</th></tr></thead>
+          <thead><tr><th>平台</th><th>标价</th><th>优惠券</th><th>物流（1天折算¥10）</th><th style="text-align:right">到手价</th><th style="text-align:right">综合成本</th></tr></thead>
           <tbody>
             <tr v-for="q in activeNormalized.quotes" :key="q.platform" :class="{ best: q.platform === activeNormalized.best.platform }">
               <td>
@@ -143,9 +139,12 @@ async function cancel(): Promise<void> {
               <td>{{ fmt(q.price) }}</td>
               <td class="diagonal">{{ q.discount ? `-¥${q.discount}` : '—' }}</td>
               <td>{{ q.eta_days }} 天{{ q.shipping_fee ? ` · 运费¥${q.shipping_fee}` : '' }}</td>
-              <td style="text-align:right" class="final">
+              <td style="text-align:right">
                 {{ fmt(q.final_price) }}
-                <span v-if="q.platform === activeNormalized.best.platform" class="pill-opt">{{ bestLabel(activeNormalized) }}</span>
+              </td>
+              <td style="text-align:right" class="final">
+                {{ fmt(q.total_cost) }}
+                <span v-if="q.platform === activeNormalized.best.platform" class="pill-opt">最优解</span>
               </td>
             </tr>
             <tr v-for="p in degradedList" :key="p" class="dead">
@@ -155,7 +154,7 @@ async function cancel(): Promise<void> {
                   {{ platName(p) }}
                 </div>
               </td>
-              <td colspan="4" style="text-align:right">该平台暂不可比（熔断降级 · 冷却中）</td>
+              <td colspan="5" style="text-align:right">该平台暂不可比（熔断降级 · 冷却中）</td>
             </tr>
           </tbody>
         </table>
@@ -163,12 +162,12 @@ async function cancel(): Promise<void> {
     </div>
 
     <!-- 最优候选溯源理由 -->
-    <div v-if="activeItem" class="reason" style="margin:0 20px">
+    <div v-if="activeItem && !!selectedSkuId" class="reason" style="margin:0 20px">
       <h5>{{ activeItem.title }} 推荐理由 · 可溯源</h5>
       <div class="reason-item"><span class="src">理由</span>{{ activeItem.reason }}</div>
       <div v-if="activeNormalized" class="reason-item">
         <span class="src">出处</span>
-        {{ bestLabel(activeNormalized) }}：{{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}
+        {{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}，综合成本 {{ fmt(activeNormalized.best.total_cost) }}
       </div>
     </div>
 

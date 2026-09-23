@@ -17,6 +17,7 @@ def _draft(item: dict, quote: dict) -> dict:
     return {
         "sku_id": item["sku_id"],
         "title": item["title"],
+        "catalog_price": item.get("catalog_price"),
         "platform": quote["platform"],
         "price": quote["price"],
         "discount": quote["discount"],

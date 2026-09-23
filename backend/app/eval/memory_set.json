@@ -4,17 +4,17 @@
       "id": "explicit_write",
       "profile_key": "profile-a",
       "initial_profiles": {"profile-a": {}},
-      "message": "请记住我喜欢黑色和简约风，以后优先淘宝",
+      "message": "请记住我喜欢黑色和简约风，纯棉也可以",
       "expected_command": {
         "preferred_colors": ["黑色"],
         "preferred_styles": ["简约"],
-        "preferred_platforms": ["淘宝"]
+        "preferred_materials": ["纯棉"]
       },
       "expected_profiles": {
         "profile-a": {
           "preferred_colors": ["黑色"],
           "preferred_styles": ["简约"],
-          "preferred_platforms": ["淘宝"]
+          "preferred_materials": ["纯棉"]
         }
       }
     },
@@ -64,7 +64,7 @@
       "profile_key": "profile-a",
       "initial_profiles": {
         "profile-a": {"preferred_colors": ["黑色"]},
-        "profile-b": {"preferred_platforms": ["京东"]}
+        "profile-b": {"preferred_materials": ["亚麻"]}
       },
       "message": "请更新我的风格偏好为复古",
       "expected_command": {"preferred_styles": ["复古"]},
@@ -73,7 +73,7 @@
           "preferred_colors": ["黑色"],
           "preferred_styles": ["复古"]
         },
-        "profile-b": {"preferred_platforms": ["京东"]}
+        "profile-b": {"preferred_materials": ["亚麻"]}
       }
     }
   ]

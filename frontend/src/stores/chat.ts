@@ -66,7 +66,7 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
   route: { label: '意图路由', desc: '判断导购 vs 其他' },
   retrieve: { label: '商品检索', desc: 'Chroma 向量召回候选 SKU' },
   compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
-  normalize: { label: 'SKU 归一 + 优选解', desc: '三源报价对齐 + 平台偏好/综合成本择优' },
+  normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
   confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
   lock_price: { label: '二次询价锁价', desc: '下单前重新报价锁定价格' },
@@ -79,7 +79,6 @@ const MEMORY_KEY_LABELS: Record<string, string> = {
   preferred_colors: '颜色',
   preferred_styles: '风格',
   preferred_materials: '材质',
-  preferred_platforms: '平台',
   avoid_preferences: '避雷项',
 }
 
@@ -361,9 +360,9 @@ export const useChatStore = defineStore('chat', {
         }
         case 'recommend': {
           turn.recommendation = (data.recommendation as Recommendation) ?? null
-          if (!turn.impressed) {
+          const top = turn.recommendation?.items[0]
+          if (!turn.impressed && top) {
             turn.impressed = true
-            const top = turn.recommendation?.items[0]
             void recordEvent(session.id, 'impression', top?.sku_id)
           }
           break

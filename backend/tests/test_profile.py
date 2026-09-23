@@ -225,13 +225,13 @@ async def test_profile_remove_values_preserves_other_values_and_profile_isolatio
 async def test_profile_reset_is_isolated_by_profile_key(profile_key: str) -> None:
     other_profile_key = f"{profile_key}-other"
     try:
-        await apply_updates({"preferred_platforms": ["淘宝"]}, profile_key)
-        await apply_updates({"preferred_platforms": ["京东"]}, other_profile_key)
+        await apply_updates({"preferred_colors": ["黑色"]}, profile_key)
+        await apply_updates({"preferred_styles": ["简约"]}, other_profile_key)
 
         await reset_preferences(profile_key)
 
         assert await get_preferences(profile_key) == {}
-        assert await get_preferences(other_profile_key) == {"preferred_platforms": ["京东"]}
+        assert await get_preferences(other_profile_key) == {"preferred_styles": ["简约"]}
     finally:
         await reset_preferences(other_profile_key)
 

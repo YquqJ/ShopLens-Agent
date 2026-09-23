@@ -10,7 +10,6 @@ const prefTags = computed(() => {
   if (prefs.preferred_colors?.length) tags.push(`颜色：${prefs.preferred_colors.join('、')}`)
   if (prefs.preferred_styles?.length) tags.push(`风格：${prefs.preferred_styles.join('、')}`)
   if (prefs.preferred_materials?.length) tags.push(`材质：${prefs.preferred_materials.join('、')}`)
-  if (prefs.preferred_platforms?.length) tags.push(`平台：${prefs.preferred_platforms.join('、')}`)
   if (prefs.avoid_preferences?.length) tags.push(`避雷：${prefs.avoid_preferences.join('、')}`)
   return tags
 })
