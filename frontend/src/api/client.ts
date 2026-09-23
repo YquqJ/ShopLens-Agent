@@ -101,3 +101,20 @@ export async function deleteConversation(threadId: string): Promise<void> {
   const resp = await fetch(`/api/conversations/${threadId}`, { method: 'DELETE' })
   if (!resp.ok) throw new Error(`会话删除失败：${resp.status}`)
 }
+
+// 熔断演示：注入/清除某个 mock 源的故障（rate 0 清除，1 表示 100% 失败）
+export async function setFailRate(source: string, rate: number): Promise<void> {
+  await fetch('/api/debug/failrate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, rate }),
+  })
+}
+
+// 熔断演示：查询各源熔断器当前状态（closed/open/half_open）
+export async function fetchBreakers(): Promise<Record<string, string>> {
+  const resp = await fetch('/api/debug/breakers')
+  if (!resp.ok) throw new Error(`熔断状态查询失败：${resp.status}`)
+  const data = (await resp.json()) as { sources: Record<string, string> }
+  return data.sources ?? {}
+}

@@ -26,6 +26,7 @@ chroma_data/
 *.db
 *.sqlite3
 *.log
+.chaos/
 
 # === 编辑器 / 系统 ===
 .vscode/

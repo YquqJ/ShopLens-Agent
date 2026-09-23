@@ -10,6 +10,7 @@
 """
 import os
 import random
+from pathlib import Path
 
 # 平台相对市场价的系数
 PLATFORM_FACTOR = {"jd": 1.02, "taobao": 0.98, "pdd": 0.93}
@@ -38,9 +39,37 @@ def quote(sku_id: str, platform: str) -> float:
     return round(price, 2)
 
 
+# 运行时故障注入覆盖目录：前端调试开关写这里，子进程 should_fail 每次调用前读。
+# 子进程与后端共享磁盘，故走后端进程写文件 → 子进程即刻生效（env 只在 spawn 时传入，运行中改不到）。
+CHAOS_DIR = Path(__file__).resolve().parents[2] / ".chaos"
+
+
+def override_file(source: str) -> Path:
+    return CHAOS_DIR / source.lower()
+
+
+def set_override(source: str, rate: float) -> None:
+    """写覆盖文件（调试端点/front 调用），使该 mock 源按 rate 概率注入故障。"""
+    CHAOS_DIR.mkdir(parents=True, exist_ok=True)
+    override_file(source).write_text(str(rate), encoding="utf-8")
+
+
+def clear_override(source: str) -> None:
+    """清除覆盖，退回环境变量默认故障率。"""
+    f = override_file(source)
+    if f.exists():
+        f.unlink()
+
+
 def should_fail(source: str) -> bool:
-    """按环境变量注入故障：SHOPLENS_FAILRATE_<SOURCE>=0~1，命中即应抛错。"""
+    """按注入故障：运行时覆盖文件优先，否则环境变量 SHOPLENS_FAILRATE_<SOURCE>=0~1，命中即应抛错。"""
     raw = os.environ.get(f"SHOPLENS_FAILRATE_{source.upper()}", "0")
+    f = override_file(source)
+    if f.exists():
+        try:
+            raw = f.read_text(encoding="utf-8").strip()
+        except OSError:
+            raw = os.environ.get(f"SHOPLENS_FAILRATE_{source.upper()}", "0")
     try:
         rate = float(raw)
     except ValueError:

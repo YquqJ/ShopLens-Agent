@@ -7,6 +7,9 @@
   重确认后（lock_attempts>0）直接 place_order，避免无限循环；
 - compare/lock_price 按 configurable.mcp_tools 直调 MCP 工具（编排式）。
 """
+from backend.app.agents.state import AgentState
+
+
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.nodes import (
@@ -54,7 +57,7 @@ def _after_lock_price(state: AgentState) -> str:
 
 
 def build_graph(checkpointer=None):
-    g = StateGraph(AgentState)
+    g = StateGraph[AgentState, None, AgentState, AgentState](AgentState)
     g.add_node("clarify", clarify.clarify_node)
     g.add_node("route", route.route_node)
     g.add_node("retrieve", retrieve.retrieve_node)

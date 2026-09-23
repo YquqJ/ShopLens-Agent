@@ -84,6 +84,10 @@ class SourceRegistry:
             )
         return self._breakers[source]
 
+    def breaker_states(self) -> dict[str, str]:
+        """每个已建源 → 当前状态（closed/open/half_open），供调试面板展示三态。"""
+        return {src: b.state.value for src, b in self._breakers.items()}
+
     def protect(self, tools: dict) -> dict:
         """给一批 name→工具 套保护包装，返回 name→ProtectedTool。"""
         return {

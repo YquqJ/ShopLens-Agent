@@ -1,11 +1,60 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
+import { fetchBreakers, setFailRate } from '../api/client'
 
 const store = useChatStore()
 
 const turn = computed(() => store.activeSession.turns.at(-1))
 const shortThread = computed(() => store.activeSession.id.replace(/-/g, '').slice(0, 8))
+
+const SOURCES = [
+  { key: 'jd', label: '京东' },
+  { key: 'taobao', label: '淘宝' },
+  { key: 'pdd', label: '拼多多' },
+]
+
+const STATE_TEXT: Record<string, string> = { closed: '闭合', open: '打开', half_open: '半开' }
+
+const failRates = ref<Record<string, number>>({ jd: 0, taobao: 0, pdd: 0 })
+const breakerStates = ref<Record<string, string>>({})
+
+let timer: number | undefined
+
+async function refreshBreakers(): Promise<void> {
+  try {
+    breakerStates.value = await fetchBreakers()
+  } catch {
+    /* 调试面板静默失败，不影响主流程 */
+  }
+}
+
+async function toggle(source: string): Promise<void> {
+  const next = failRates.value[source] > 0 ? 0 : 1
+  failRates.value[source] = next
+  try {
+    await setFailRate(source, next)
+  } catch (e) {
+    console.error('注入故障失败', e)
+  }
+}
+
+function stateOf(key: string): string {
+  return breakerStates.value[key] ?? 'closed'
+}
+
+function stateText(s: string): string {
+  return STATE_TEXT[s] ?? s
+}
+
+onMounted(() => {
+  void refreshBreakers()
+  timer = window.setInterval(refreshBreakers, 1500)
+})
+
+onUnmounted(() => {
+  if (timer) window.clearInterval(timer)
+})
 </script>
 
 <template>
@@ -32,6 +81,18 @@ const shortThread = computed(() => store.activeSession.id.replace(/-/g, '').slic
       <span>模型 <b>qwen-plus</b> · 路由 <b>qwen-turbo</b></span>
       <span v-if="turn?.degradedSources.length">已降级源 <b>{{ turn.degradedSources.join(' / ') }}</b></span>
       <span v-else>MCP 比价源 <b>3</b> · 优惠券/物流源 <b>2</b></span>
+    </div>
+
+    <div class="debug-panel">
+      <div class="debug-title">熔断演示 · 故障注入</div>
+      <div class="debug-row" v-for="s in SOURCES" :key="s.key">
+        <span class="debug-src">{{ s.label }}</span>
+        <button class="debug-toggle" :class="{ on: failRates[s.key] > 0 }" @click="toggle(s.key)">
+          {{ failRates[s.key] > 0 ? '已注入' : '注入故障' }}
+        </button>
+        <span class="debug-state" :class="stateOf(s.key)">{{ stateText(stateOf(s.key)) }}</span>
+      </div>
+      <div class="debug-hint">注入后发一条导购，看「多源比价」节点：该源连续失败→熔断打开→降级，其余源照常出结果</div>
     </div>
   </aside>
 </template>
