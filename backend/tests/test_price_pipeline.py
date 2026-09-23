@@ -62,12 +62,14 @@ async def test_lock_price_uses_the_same_catalog_base_price() -> None:
         "final_price": 204,
     }
 
-    await lock_price_node(
+    result = await lock_price_node(
         {"draft_order": draft, "lock_attempts": 0},
         {"configurable": {"mcp_tools": {"price_jd_get_quote": price_tool}}},
     )
 
     assert price_tool.calls == [{"sku_id": "SKU0001", "base_price": 200}]
+    assert result["draft_order"]["previous_final_price"] == 204
+    assert result["draft_order"]["final_price"] == 205
 
 
 def test_confirmation_carries_catalog_price_into_the_order_draft() -> None:

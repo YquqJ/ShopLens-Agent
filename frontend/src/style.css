@@ -143,6 +143,9 @@ textarea { font-family: inherit; }
 .order-summary { background: var(--muted-bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 17px; margin-bottom: 14px; }
 .order-line { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13.5px; }
 .order-line.total { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 10px; font-weight: 700; font-size: 15.5px; }
+.price-change { margin-left: 6px; font-size: 12px; font-weight: 600; }
+.price-change.up { color: #b45309; }
+.price-change.down { color: #047857; }
 .lock-note { display: none; align-items: center; gap: 9px; background: rgba(15,138,95,.1); color: #065f46; border: 1px solid var(--ok); padding: 10px 13px; border-radius: 10px; font-size: 13px; margin-bottom: 13px; }
 .lock-note.show { display: flex; }
 .btn-row { display: flex; gap: 10px; }

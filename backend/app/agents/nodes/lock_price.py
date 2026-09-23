@@ -40,7 +40,12 @@ async def lock_price_node(state: AgentState, config: RunnableConfig) -> dict:
     new_final = round(new_price - draft.get("discount", 0) + draft.get("shipping_fee", 0), 2)
     raised = new_final > draft["final_price"]
 
-    updated = {**draft, "price": new_price, "final_price": new_final}
+    updated = {
+        **draft,
+        "previous_final_price": draft["final_price"],
+        "price": new_price,
+        "final_price": new_final,
+    }
     return {
         "draft_order": updated,
         "price_raised": raised,

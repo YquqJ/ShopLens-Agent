@@ -69,6 +69,7 @@ export interface DraftOrder {
   shipping_fee: number
   eta_days: number
   final_price: number
+  previous_final_price?: number
 }
 
 export interface OrderResult {

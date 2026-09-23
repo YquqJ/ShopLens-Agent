@@ -58,18 +58,42 @@ function selectSku(skuId: string): void {
   store.trackClick(skuId, props.turn.id)
 }
 
-interface HitlSummary { title: string; platform: string; final_price: number; eta_days: number }
+interface HitlSummary {
+  title: string
+  platform: string
+  final_price: number
+  eta_days: number
+  previous_final_price?: number
+}
 // 首轮用所选候选/平台的报价；涨价重确认用锁价后的 draft
 const summary = computed<HitlSummary | null>(() => {
   if (props.turn.priceRaised && props.turn.draftOrder) {
     const d = props.turn.draftOrder
-    return { title: d.title, platform: d.platform, final_price: d.final_price, eta_days: d.eta_days }
+    return {
+      title: d.title,
+      platform: d.platform,
+      final_price: d.final_price,
+      eta_days: d.eta_days,
+      previous_final_price: d.previous_final_price,
+    }
   }
   const q = selectedQuote.value
   const it = selectedItem.value
   if (q && it) return { title: it.title, platform: q.platform, final_price: q.final_price, eta_days: q.eta_days }
   return null
 })
+
+const priceChange = computed(() => {
+  const previous = summary.value?.previous_final_price
+  const current = summary.value?.final_price
+  if (previous == null || current == null || previous === current) return null
+  const delta = roundCurrency(current - previous)
+  return { direction: delta > 0 ? 'up' : 'down', amount: Math.abs(delta) }
+})
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100
+}
 
 function origPrice(item: RecommendItem): number | null {
   const b = bySku.value[item.sku_id]?.best
@@ -184,7 +208,15 @@ async function cancel(): Promise<void> {
         <div class="order-line"><span>{{ summary.title }} ×1</span><span>{{ fmt(summary.final_price) }}</span></div>
         <div class="order-line"><span>平台</span><span>{{ platName(summary.platform) }}</span></div>
         <div class="order-line"><span>快递时效</span><span>{{ summary.eta_days }} 天</span></div>
-        <div class="order-line total"><span>应付合计</span><span>{{ fmt(summary.final_price) }}</span></div>
+        <div class="order-line total">
+          <span>应付合计</span>
+          <span>
+            {{ fmt(summary.final_price) }}
+            <span v-if="priceChange" class="price-change" :class="priceChange.direction">
+              {{ priceChange.direction === 'up' ? '↑' : '↓' }} {{ fmt(priceChange.amount) }}
+            </span>
+          </span>
+        </div>
       </div>
       <div v-if="turn.priceRaised && turn.order?.status !== 'placed'" class="lock-note show">二次询价发现价格变动，请确认最新到手价后再下单。</div>
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
