@@ -23,6 +23,16 @@ async function scrollToBottom(): Promise<void> {
   if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
 }
 
+function clarificationRound(index: number): number {
+  let count = 0
+  const turns = store.activeSession.turns
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    if (cursor !== index && turns[cursor].order?.status === 'placed') break
+    if (turns[cursor].clarifyQuestion) count += 1
+  }
+  return count
+}
+
 // 深监听会话：流式推进（新 turn / 节点事件）时自动滚到底
 watch(() => store.activeSession, scrollToBottom, { deep: true })
 </script>
@@ -49,7 +59,7 @@ watch(() => store.activeSession, scrollToBottom, { deep: true })
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a4 4 0 0 1 4 4c0 .83-.26 1.6-.7 2.24a6 6 0 0 1 4.3 5.76v1a1 1 0 0 1-1 1H5.4a1 1 0 0 1-1-1v-1a6 6 0 0 1 4.3-5.76A3.98 3.98 0 0 1 8 7a4 4 0 0 1 4-4z"/></svg>
         </div>
         <div class="bubble">
-          <div class="voice">ShopLens · 澄清（第 {{ i + 1 }} 轮）</div>
+          <div class="voice">ShopLens · 澄清（第 {{ clarificationRound(i) }} 轮）</div>
           {{ turn.clarifyQuestion }}
         </div>
       </div>
