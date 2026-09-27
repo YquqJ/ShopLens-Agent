@@ -10,11 +10,11 @@
 设计决策：
 - Chroma 只存「向量 + 最小元数据」，价格/库存唯一事实来源是 Postgres——
   保证「价格/库存来自落库，非 LLM 现编」；
-- 向量检索 v0 只做 Chroma 语义检索（无 rerank）；gte-rerank 重排留到 M7 优化，
-  先用四把尺子量出 v0 基线再对症加。
+- 检索升级：embed 自然语言 description（非 title），attributes 拍平成顶层 ASCII 元数据字段；
+  闭集硬约束（品类/颜色/风格/材质/场景/版型）走 Chroma where 过滤，语义只做软相关；
+  gte-rerank / BM25 重排仍留后续，先用量化尺子测「硬过滤 vs 纯语义」的差值再对症。
 """
 import asyncio
-import json
 import random
 
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
@@ -40,36 +40,42 @@ T_SHIRT_ATTRIBUTES = {
     "风格": ["简约", "街头", "运动"],
     "材质": ["纯棉", "亚麻"],
     "场景": ["周末", "旅行", "运动"],
+    "版型": ["宽松", "修身", "直筒"],
 }
 SHIRT_ATTRIBUTES = {
     "颜色": COLORS,
     "风格": ["简约", "通勤", "复古"],
     "材质": ["纯棉", "亚麻", "牛仔"],
     "场景": ["通勤", "约会", "旅行"],
+    "版型": ["修身", "宽松", "标准"],
 }
 SWEATSHIRT_ATTRIBUTES = {
     "颜色": COLORS,
     "风格": ["简约", "街头", "运动"],
     "材质": ["纯棉", "抓绒"],
     "场景": ["周末", "旅行", "运动"],
+    "版型": ["宽松", "落肩", "修身"],
 }
 OUTERWEAR_ATTRIBUTES = {
     "颜色": COLORS,
     "风格": ["简约", "通勤", "复古"],
     "材质": ["羊毛", "牛仔", "棉服"],
     "场景": ["通勤", "旅行", "约会"],
+    "版型": ["修身", "宽松", "直筒"],
 }
 TROUSER_ATTRIBUTES = {
     "颜色": COLORS,
     "风格": ["简约", "通勤", "街头"],
     "材质": ["纯棉", "亚麻", "牛仔"],
     "场景": ["通勤", "周末", "旅行"],
+    "版型": ["直筒", "修身", "宽松"],
 }
 SHOE_ATTRIBUTES = {
     "颜色": COLORS,
     "风格": ["简约", "复古", "运动"],
     "材质": ["真皮", "帆布", "网面"],
     "场景": ["通勤", "周末", "运动"],
+    "版型": ["标准", "宽松", "窄楦"],
 }
 
 # 每个类目：统一属性维度 + 基准价（元）
@@ -113,6 +119,37 @@ def build_seed_products(count: int = 200) -> list[dict]:
     return products
 
 
+# 属性中文 key → Chroma 元数据 ASCII key（供 where 硬过滤；版型随本次检索升级加入）
+_ATTR_FILTER_KEYS = {
+    "颜色": "color",
+    "风格": "style",
+    "材质": "material",
+    "场景": "scene",
+    "版型": "fit",
+}
+
+
+def build_description(attributes: dict, category: str) -> str:
+    """由闭集属性拼一句可嵌入的自然语言描述（含版型/场景/材质，供语义召回）。"""
+    return (
+        f"{attributes.get('颜色', '')}{attributes.get('风格', '')}风{category}，"
+        f"{attributes.get('材质', '')}面料，{attributes.get('版型', '')}版型，"
+        f"适合{attributes.get('场景', '')}穿着"
+    )
+
+
+def _flatten_metadata(p: dict) -> dict:
+    """attributes 拍平成顶层 ASCII 元数据字段：让 Chroma where 能逐字段过滤。"""
+    meta = {
+        "sku_id": p["sku_id"],
+        "title": p["title"],
+        "category": p["category"],
+    }
+    for cn_key, ascii_key in _ATTR_FILTER_KEYS.items():
+        meta[ascii_key] = p["attributes"].get(cn_key, "")
+    return meta
+
+
 def build_embedding_fn() -> OpenAIEmbeddingFunction:
     """text-embedding-v3（DashScope OpenAI 兼容）embedding 函数。"""
     if not settings.DASHSCOPE_API_KEY:
@@ -145,16 +182,8 @@ async def seed(count: int = 200) -> int:
         chunk = products[i:i + _EMBED_BATCH]
         col.add(
             ids=[p["sku_id"] for p in chunk],
-            documents=[p["title"] for p in chunk],
-            metadatas=[
-                {
-                    "sku_id": p["sku_id"],
-                    "title": p["title"],
-                    "category": p["category"],
-                    "attributes": json.dumps(p["attributes"], ensure_ascii=False),
-                }
-                for p in chunk
-            ],
+            documents=[build_description(p["attributes"], p["category"]) for p in chunk],
+            metadatas=[_flatten_metadata(p) for p in chunk],
         )
     return len(products)
 
@@ -166,10 +195,27 @@ async def _fetch_by_skus(sku_ids: list[str]) -> list[Product]:
         return list(result.scalars())
 
 
-async def search(query: str, top_k: int = 5) -> list[dict]:
-    """语义检索：Chroma 召回 -> 回 Postgres 取权威价格/库存 -> 组装结果。"""
+def _build_where(filters: dict | None) -> dict | None:
+    """闭集硬约束 → Chroma where：单键直达，多键用 $and 交叠；单值 $eq、列表 $in。"""
+    conds: list[dict] = []
+    for key, value in (filters or {}).items():
+        if value in (None, "", []):
+            continue
+        cond = {"$in": list(value)} if isinstance(value, (list, tuple, set)) else {"$eq": value}
+        conds.append({key: cond})
+    if not conds:
+        return None
+    return conds[0] if len(conds) == 1 else {"$and": conds}
+
+
+async def search(query: str, top_k: int = 5, filters: dict | None = None) -> list[dict]:
+    """语义检索（可选闭集硬约束过滤）：Chroma 召回 -> 回 Postgres 取权威价格/库存 -> 组装结果。"""
     col = chroma_db.get_collection(COLLECTION_NAME, embedding_function=build_embedding_fn())
-    res = col.query(query_texts=[query], n_results=top_k, include=["metadatas", "distances"])
+    kwargs: dict = dict(query_texts=[query], n_results=top_k, include=["metadatas", "distances"])
+    where = _build_where(filters)
+    if where:
+        kwargs["where"] = where
+    res = col.query(**kwargs)
     metadatas = res["metadatas"][0]
     distances = res["distances"][0]
     sku_ids = [md["sku_id"] for md in metadatas]

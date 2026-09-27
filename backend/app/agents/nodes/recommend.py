@@ -52,7 +52,8 @@ def _fmt_delivery(b: dict) -> str:
 def _fmt_prefs(prefs: dict) -> str:
     """偏好字典 → 紧凑「键=值」，跳过空字段（裁剪用）。"""
     mapping = [("category", "品类"), ("budget", "预算"), ("color", "颜色"),
-               ("style", "风格"), ("material", "材质"), ("scene", "场景")]
+               ("style", "风格"), ("material", "材质"), ("scene", "场景"),
+               ("fit", "版型"), ("requirements", "要求")]
     parts = [f"{cn}={prefs[k]}" for k, cn in mapping if prefs.get(k) not in (None, "", [])]
     defaults = [
         ("preferred_colors", "长期颜色", "color"),

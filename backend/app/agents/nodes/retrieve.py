@@ -14,16 +14,34 @@ from app.services import zhidemai as zhidemai_service
 
 _TOP_K = 5
 
+# 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型
+_CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit")
+# 语义召回文本的字段顺序（回退拼接用，保持「颜色/风格/材质/品类」的旧观感）
+_SEMANTIC_ORDER = ("color", "style", "material", "category", "scene", "fit")
 
-def _build_query(prefs: dict) -> str:
-    """当前会话优先，长期偏好只在对应当前字段缺失时补入查询。"""
-    parts = [str(prefs[k]) for k in ("color", "style", "material", "category") if prefs.get(k)]
-    if not prefs.get("color"):
-        parts.extend(str(v) for v in prefs.get("preferred_colors", []) if v)
-    if not prefs.get("style"):
-        parts.extend(str(v) for v in prefs.get("preferred_styles", []) if v)
-    if not prefs.get("material"):
-        parts.extend(str(v) for v in prefs.get("preferred_materials", []) if v)
+
+def _build_filters(prefs: dict) -> dict:
+    """闭集硬约束 → Chroma where：会话字段优先（单值），缺失才用长期偏好（列表 → $in）。"""
+    filters: dict = {}
+    for key in _CLOSED_FIELDS:
+        value = prefs.get(key)
+        if value not in (None, "", []):
+            filters[key] = value
+    for key, preferred in (
+        ("color", "preferred_colors"),
+        ("style", "preferred_styles"),
+        ("material", "preferred_materials"),
+    ):
+        if key not in filters and prefs.get(preferred):
+            filters[key] = prefs[preferred]
+    return filters
+
+
+def _build_semantic_query(prefs: dict) -> str:
+    """语义召回文本：优先功能词 requirements，空则回退到闭集字段拼接。"""
+    if prefs.get("requirements"):
+        return str(prefs["requirements"])
+    parts = [str(prefs[k]) for k in _SEMANTIC_ORDER if prefs.get(k)]
     return " ".join(parts) if parts else str(prefs.get("category", ""))
 
 
@@ -86,7 +104,7 @@ async def retrieve_node(state: AgentState) -> dict:
 
     if _zhidemai_enabled():
         # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话
-        query = _build_query(prefs) or (
+        query = _build_semantic_query(prefs) or (
             state["messages"][-1].content if state.get("messages") else ""
         )
         items = await zhidemai_service.search_real_products(query, size=_TOP_K)
@@ -107,5 +125,10 @@ async def retrieve_node(state: AgentState) -> dict:
         ]
         return {"candidates": candidates, "normalized": normalized, "zdm_mode": True}
 
-    candidates = await catalog.search(_build_query(prefs), top_k=_TOP_K)
+    filters = _build_filters(prefs)
+    semantic_q = _build_semantic_query(prefs)
+    candidates = await catalog.search(semantic_q, top_k=_TOP_K, filters=filters)
+    if not candidates:
+        # 硬过滤无命中时退回纯语义，保住「总是有结果」的体验
+        candidates = await catalog.search(semantic_q, top_k=_TOP_K)
     return {"candidates": candidates, "zdm_mode": False}

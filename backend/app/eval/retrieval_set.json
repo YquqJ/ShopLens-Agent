@@ -1,0 +1,40 @@
+{
+  "cases": [
+    {
+      "id": "material_hard",
+      "query": "周末穿、显瘦、透气一点，要纯棉的",
+      "constraints": { "material": "纯棉", "scene": "周末" },
+      "top_k": 5
+    },
+    {
+      "id": "color_hard",
+      "query": "买一件黑色外套，简约风",
+      "constraints": { "category": "外套", "color": "黑色", "style": "简约" },
+      "top_k": 5
+    },
+    {
+      "id": "category_style",
+      "query": "要一双运动鞋",
+      "constraints": { "category": "鞋", "style": "运动" },
+      "top_k": 5
+    },
+    {
+      "id": "fit_hard",
+      "query": "修身一点的裤子，通勤穿",
+      "constraints": { "category": "裤装", "fit": "修身", "scene": "通勤" },
+      "top_k": 5
+    },
+    {
+      "id": "multi_hard",
+      "query": "黑色纯棉T恤，周末穿",
+      "constraints": { "category": "T恤", "color": "黑色", "material": "纯棉", "scene": "周末" },
+      "top_k": 5
+    },
+    {
+      "id": "material_only",
+      "query": "亚麻衬衫",
+      "constraints": { "category": "衬衫", "material": "亚麻" },
+      "top_k": 5
+    }
+  ]
+}
