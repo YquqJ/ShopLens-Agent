@@ -12,7 +12,7 @@ import json
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from app.agents.llm import get_llm
+from app.agents.llm import MAIN_MODEL, get_structured_llm
 from app.agents.state import AgentState, merge_preferences
 
 
@@ -60,7 +60,7 @@ def _default_question(prefs: dict) -> str:
 
 
 async def clarify_node(state: AgentState) -> dict:
-    structured = get_llm().with_structured_output(ClarifyResult)
+    structured = get_structured_llm(MAIN_MODEL, ClarifyResult)
     latest = state["messages"][-1].content if state["messages"] else ""
     prev = state.get("preferences") or {}
 

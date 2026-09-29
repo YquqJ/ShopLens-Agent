@@ -2,7 +2,7 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from app.agents.llm import LIGHT_MODEL, get_llm
+from app.agents.llm import LIGHT_MODEL, get_structured_llm
 from app.agents.state import AgentState
 
 
@@ -17,7 +17,7 @@ _REPLY = "我是导购助手，可帮你比价选品、下单。说说你的购�
 
 
 async def route_node(state: AgentState) -> dict:
-    structured = get_llm(LIGHT_MODEL).with_structured_output(RouteResult)
+    structured = get_structured_llm(LIGHT_MODEL, RouteResult)
     latest = state["messages"][-1].content if state["messages"] else ""
     result: RouteResult = await structured.ainvoke([
         SystemMessage(_SYSTEM), HumanMessage(latest),

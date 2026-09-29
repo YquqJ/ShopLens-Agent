@@ -78,19 +78,11 @@ class _CountedStructured:
         return res
 
 
-class _CountedClient:
-    def __init__(self, inner):
-        self._inner = inner
+def _make_counted_structured(factory):
+    """把节点模块的 get_structured_llm 替换为计数包装（透传 model/schema 参数）。"""
 
-    def with_structured_output(self, model, **kw):
-        return _CountedStructured(self._inner.with_structured_output(model, **kw))
-
-
-def _make_counted(factory):
-    """把节点模块的 get_llm 替换为计数包装（透传 model 参数，保留分层）。"""
-
-    def counted(*args, **kwargs):
-        return _CountedClient(factory(*args, **kwargs))
+    def counted(model, schema):
+        return _CountedStructured(factory(model, schema))
 
     return counted
 
@@ -98,9 +90,9 @@ def _make_counted(factory):
 def _patch_nodes() -> None:
     from app.agents import llm as llm_mod
 
-    clarify_mod.get_llm = _make_counted(llm_mod.get_llm)
-    route_mod.get_llm = _make_counted(llm_mod.get_llm)
-    recommend_mod.get_llm = _make_counted(llm_mod.get_llm)
+    clarify_mod.get_structured_llm = _make_counted_structured(llm_mod.get_structured_llm)
+    route_mod.get_structured_llm = _make_counted_structured(llm_mod.get_structured_llm)
+    recommend_mod.get_structured_llm = _make_counted_structured(llm_mod.get_structured_llm)
 
 
 def _state(message: str) -> AgentState:

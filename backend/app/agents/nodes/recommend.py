@@ -10,7 +10,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from app.agents.llm import get_llm
+from app.agents.llm import MAIN_MODEL, get_structured_llm
 from app.agents.state import AgentState
 from app.agents.nodes.memory import build_effective_preferences
 
@@ -112,7 +112,7 @@ async def recommend_node(state: AgentState) -> dict:
         }
     user = build_user(prefs, top, state.get("degraded_sources", []), compact=True)
 
-    structured = get_llm().with_structured_output(RecommendResult)
+    structured = get_structured_llm(MAIN_MODEL, RecommendResult)
     res: RecommendResult = await structured.ainvoke([
         SystemMessage(_SYSTEM), HumanMessage(user),
     ])
