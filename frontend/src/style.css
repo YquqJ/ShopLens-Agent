@@ -123,7 +123,7 @@ textarea { font-family: inherit; }
 .reason-item { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; font-size: 13.5px; }
 .reason-item .src { background: var(--muted-bg); border: 1px solid var(--border); font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 7px; color: var(--gold); flex-shrink: 0; margin-top: 1px; }
 
-.cmp { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 18px; }
+.cmp { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin: 8px 0 18px; }
 .cmp-heading { display: flex; align-items: center; gap: 9px; padding: 14px 20px; font-family: var(--font-display); font-size: 17px; border-bottom: 1px solid var(--border); }
 .cmp table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cmp th { text-align: left; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-fg); padding: 10px 20px; border-bottom: 1px solid var(--border); font-weight: 600; }

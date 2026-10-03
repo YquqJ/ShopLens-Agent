@@ -14,6 +14,7 @@ from app.api.profile import router as profile_router
 from app.core.config import settings
 from app.db.session import init_db
 from app.infra.observability import setup_tracer
+from app.infra.langfuse import setup_langfuse, shutdown_langfuse
 from app.infra.protect import SourceRegistry
 from app.mcp import adapter
 
@@ -22,17 +23,22 @@ from app.mcp import adapter
 async def lifespan(app: FastAPI):
     # Register application metadata before the graph can read profile preferences.
     await init_db()
-    async with AsyncPostgresSaver.from_conn_string(settings.postgres_dsn) as saver:
-        await saver.setup()
-        app.state.graph = build_graph(checkpointer=saver)
-        # 持久会话装载 MCP 工具（subprocess 常驻，复用会话 RPC），再套熔断/重试保护
-        toolbox = await adapter.build_persistent_toolbox()
-        async with toolbox:
-            registry = SourceRegistry()
-            registry.tracer = setup_tracer()  # OpenTelemetry trace 插桩（可选）
-            app.state.mcp_tools = registry.protect(toolbox.tools)
-            app.state.source_registry = registry
-            yield
+    tracer = setup_tracer()  # OpenTelemetry trace 插桩（默认输出本地 console）
+    app.state.langfuse = setup_langfuse()
+    try:
+        async with AsyncPostgresSaver.from_conn_string(settings.postgres_dsn) as saver:
+            await saver.setup()
+            app.state.graph = build_graph(checkpointer=saver)
+            # 持久会话装载 MCP 工具（subprocess 常驻，复用会话 RPC），再套熔断/重试保护
+            toolbox = await adapter.build_persistent_toolbox()
+            async with toolbox:
+                registry = SourceRegistry()
+                registry.tracer = tracer
+                app.state.mcp_tools = registry.protect(toolbox.tools)
+                app.state.source_registry = registry
+                yield
+    finally:
+        shutdown_langfuse(app.state.langfuse)
 
 
 app = FastAPI(lifespan=lifespan)

@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # 是否启用真实商品检索源；置 1 后检索层直连海纳，跳过比价/下单闭环
     SHOPLENS_ZHIDEMAI_ENABLED: bool = False
 
+    # Langfuse 可选观测（默认关闭；不影响本地离线运行）
+    LANGFUSE_ENABLED: bool = False
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
+    LANGFUSE_TRACING_ENVIRONMENT: str = "development"
+    LANGFUSE_RELEASE: str = ""
+    LANGFUSE_SAMPLE_RATE: float = 1.0
+
     @property
     def chroma_path(self) -> Path:
         """CHROMA_DIR 相对 backend 根解析为绝对路径。"""

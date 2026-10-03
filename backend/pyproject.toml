@@ -28,6 +28,8 @@ dependencies = [
     "tenacity>=8.3",
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
+    "langfuse>=4.16.0",
+    "langchain>=1.4.3",
 ]
 
 # 本目录是应用（非可分发库），依赖统一由 uv.lock 锁定

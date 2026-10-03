@@ -14,6 +14,11 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from app.agents.state import initial_state, is_completed_order
+from app.infra.langfuse import (
+    create_callback_handler,
+    langfuse_request_context,
+    with_langfuse_config,
+)
 from app.services.order import ensure_conversation, require_conversation_owner
 
 router = APIRouter()
@@ -64,20 +69,37 @@ def _safe_node_update(node: str, update: dict) -> dict:
     return safe
 
 
-async def _stream(graph, cfg, payload, is_resume: bool):
+async def _stream(
+    graph,
+    cfg,
+    payload,
+    is_resume: bool,
+    *,
+    langfuse=None,
+    trace_name: str = "shoplens.chat",
+    trace_metadata: dict | None = None,
+):
     """共用流式逻辑：节点分帧 + interrupt/done 收尾。"""
-    async for event in graph.astream(payload, cfg, stream_mode="updates"):
-        for node, update in event.items():
-            if node == "__interrupt__" or not isinstance(update, dict):
-                # 流末尾的 __interrupt__ 事件（值非 dict），交 aget_state 统一处理
-                continue
-            safe = _safe_node_update(node, update)
-            yield _sse("node", {"node": node, **safe})
-    snap = await graph.aget_state(cfg)
-    if snap.interrupts:
-        yield _sse("interrupt", snap.interrupts[0].value)
-    else:
-        yield _sse("done", snap.values.get("order"))
+    configurable = cfg.get("configurable", {})
+    with langfuse_request_context(
+        langfuse,
+        trace_name=trace_name,
+        session_id=configurable.get("thread_id", "unknown"),
+        user_id=configurable.get("profile_id"),
+        metadata=trace_metadata,
+    ):
+        async for event in graph.astream(payload, cfg, stream_mode="updates"):
+            for node, update in event.items():
+                if node == "__interrupt__" or not isinstance(update, dict):
+                    # 流末尾的 __interrupt__ 事件（值非 dict），交 aget_state 统一处理
+                    continue
+                safe = _safe_node_update(node, update)
+                yield _sse("node", {"node": node, **safe})
+        snap = await graph.aget_state(cfg)
+        if snap.interrupts:
+            yield _sse("interrupt", snap.interrupts[0].value)
+        else:
+            yield _sse("done", snap.values.get("order"))
 
 
 @router.post("/chat")
@@ -88,12 +110,27 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         await ensure_conversation(req.thread_id, req.profile_id)
     except (PermissionError, ValueError) as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    cfg = _make_cfg(request, req.thread_id, req.profile_id)
+    langfuse = getattr(request.app.state, "langfuse", None)
+    handler = create_callback_handler(langfuse)
+    cfg = with_langfuse_config(
+        _make_cfg(request, req.thread_id, req.profile_id),
+        handler,
+        run_name="shoplens.chat",
+        metadata={"operation": "chat", "thread_id": req.thread_id},
+        tags=["chat"],
+    )
 
     async def gen() -> AsyncGenerator[str, None]:
         try:
             payload = await build_chat_payload(graph, cfg, req.message)
-            async for chunk in _stream(graph, cfg, payload, is_resume=False):
+            async for chunk in _stream(
+                graph,
+                cfg,
+                payload,
+                is_resume=False,
+                langfuse=langfuse,
+                trace_metadata={"operation": "chat"},
+            ):
                 yield chunk
         except Exception as e:  # noqa: BLE001
             yield _sse("error", {"message": str(e)})
@@ -108,7 +145,15 @@ async def resume(req: ResumeRequest, request: Request) -> StreamingResponse:
         await require_conversation_owner(req.thread_id, req.profile_id)
     except (PermissionError, ValueError) as exc:
         raise HTTPException(status_code=404, detail="会话不存在") from exc
-    cfg = _make_cfg(request, req.thread_id, req.profile_id)
+    langfuse = getattr(request.app.state, "langfuse", None)
+    handler = create_callback_handler(langfuse)
+    cfg = with_langfuse_config(
+        _make_cfg(request, req.thread_id, req.profile_id),
+        handler,
+        run_name="shoplens.resume",
+        metadata={"operation": "resume", "thread_id": req.thread_id},
+        tags=["resume"],
+    )
 
     async def gen() -> AsyncGenerator[str, None]:
         # resume 载荷：confirm + 可选候选/平台选择；空字段不传给 interrupt
@@ -118,7 +163,15 @@ async def resume(req: ResumeRequest, request: Request) -> StreamingResponse:
         if req.platform:
             resume["platform"] = req.platform
         try:
-            async for chunk in _stream(graph, cfg, Command(resume=resume), is_resume=True):
+            async for chunk in _stream(
+                graph,
+                cfg,
+                Command(resume=resume),
+                is_resume=True,
+                langfuse=langfuse,
+                trace_name="shoplens.resume",
+                trace_metadata={"operation": "resume"},
+            ):
                 yield chunk
         except Exception as e:  # noqa: BLE001
             yield _sse("error", {"message": str(e)})

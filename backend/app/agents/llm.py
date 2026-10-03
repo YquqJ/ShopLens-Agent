@@ -45,12 +45,17 @@ def get_structured_llm(model: str, schema: type[BaseModel]):
     )
 
     class _Runnable:
-        async def ainvoke(self, messages, **kwargs):
+        async def ainvoke(self, messages, config=None, **kwargs):
             if messages and isinstance(messages[0], SystemMessage):
                 full = [SystemMessage(messages[0].content + "\n" + instr), *messages[1:]]
             else:
                 full = [SystemMessage(instr), *messages]
-            resp = await llm.ainvoke(full, response_format={"type": "json_object"}, **kwargs)
+            resp = await llm.ainvoke(
+                full,
+                config=config,
+                response_format={"type": "json_object"},
+                **kwargs,
+            )
             return schema.model_validate_json(resp.content)
 
     return _Runnable()
