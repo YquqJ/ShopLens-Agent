@@ -24,11 +24,16 @@ from app.agents.state import AgentState
 
 
 def _after_capture(state: AgentState) -> str:
-    return "route" if state.get("needs_action") == "shopping" else "end"
+    return "retrieve" if state.get("needs_action") == "shopping" else "end"
 
 
 def _after_route(state: AgentState) -> str:
-    return "retrieve" if state.get("intent") == "shopping" else "end"
+    intent = state.get("intent")
+    if intent == "shopping":
+        return "shopping"
+    if intent == "memory":
+        return "memory"
+    return "end"
 
 
 def _after_retrieve(state: AgentState) -> str:
@@ -70,10 +75,13 @@ def build_graph(checkpointer=None):
     g.add_node("place_order", place_order.place_order_node)
 
     g.add_edge(START, "load_memory")
-    g.add_edge("load_memory", "clarify")
+    g.add_edge("load_memory", "route")
+    g.add_conditional_edges(
+        "route", _after_route,
+        {"shopping": "clarify", "memory": "capture_memory", "end": END},
+    )
     g.add_edge("clarify", "capture_memory")
-    g.add_conditional_edges("capture_memory", _after_capture, {"route": "route", "end": END})
-    g.add_conditional_edges("route", _after_route, {"retrieve": "retrieve", "end": END})
+    g.add_conditional_edges("capture_memory", _after_capture, {"retrieve": "retrieve", "end": END})
     g.add_conditional_edges(
         "retrieve", _after_retrieve,
         {"compare": "compare", "recommend": "recommend"},

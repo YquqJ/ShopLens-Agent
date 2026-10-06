@@ -49,7 +49,7 @@ watch(() => store.activeSession, scrollToBottom, { deep: true })
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a4 4 0 0 1 4 4c0 .83-.26 1.6-.7 2.24a6 6 0 0 1 4.3 5.76v1a1 1 0 0 1-1 1H5.4a1 1 0 0 1-1-1v-1a6 6 0 0 1 4.3-5.76A3.98 3.98 0 0 1 8 7a4 4 0 0 1 4-4z"/></svg>
         </div>
         <div class="bubble" style="border:none;background:transparent;box-shadow:none">
-          <div class="status-msg"><span class="spinner"></span> 正在同步多平台实时报价…</div>
+          <div class="status-msg"><span class="spinner"></span> 请稍等…</div>
         </div>
       </div>
 

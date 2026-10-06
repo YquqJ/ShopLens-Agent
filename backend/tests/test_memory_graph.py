@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from app.agents.graph import build_graph
-from app.agents.nodes import memory
+from app.agents.nodes import memory, route
 from app.agents.nodes.memory import build_effective_preferences, parse_memory_command
 from app.api.chat import ChatRequest, ResumeRequest
 
@@ -117,5 +117,39 @@ def test_graph_runs_load_before_clarify_and_capture() -> None:
     edges = {(edge.source, edge.target) for edge in build_graph().get_graph().edges}
 
     assert ("__start__", "load_memory") in edges
-    assert ("load_memory", "clarify") in edges
+    assert ("load_memory", "route") in edges
+    assert ("route", "clarify") in edges
+    assert ("route", "capture_memory") in edges
     assert ("clarify", "capture_memory") in edges
+    assert ("capture_memory", "retrieve") in edges
+
+
+@pytest.mark.anyio
+async def test_route_fast_paths_explicit_memory_command_without_llm(monkeypatch) -> None:
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("explicit memory command should not call the router LLM")
+
+    monkeypatch.setattr(route, "get_structured_llm", fail_if_called)
+
+    result = await route.route_node({
+        "messages": [HumanMessage("请记住我喜欢黑色")],
+        "preferences": {},
+    })
+
+    assert result["intent"] == "memory"
+    assert result["reply"] == "已更新跨会话偏好。"
+
+
+@pytest.mark.anyio
+async def test_route_keeps_existing_shopping_context_for_follow_up(monkeypatch) -> None:
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("shopping follow-up should use the existing context fast path")
+
+    monkeypatch.setattr(route, "get_structured_llm", fail_if_called)
+
+    result = await route.route_node({
+        "messages": [HumanMessage("预算 300")],
+        "preferences": {"category": "衬衫"},
+    })
+
+    assert result["intent"] == "shopping"

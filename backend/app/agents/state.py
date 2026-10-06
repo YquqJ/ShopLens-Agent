@@ -42,7 +42,7 @@ class AgentState(TypedDict):
     preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
     profile_preferences: dict  # 用户授权的跨会话长期偏好（不混入本轮 preferences）
     memory_events: Annotated[list[dict], operator.add]  # trace-safe 记忆读取/写入事件
-    intent: str
+    intent: str          # "shopping" | "memory" | "other"
     needs_action: str          # "" | "clarify" | "shopping"
     clarify_question: str      # M8：澄清问句（独立序列化字段，供前端透出；messages 不含）
     reply: str                 # M8：route 非导购兜底回复（独立序列化字段）
