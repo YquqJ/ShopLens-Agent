@@ -71,7 +71,7 @@ export interface Session {
 // 节点名 → Trace 抽屉展示文案（对齐原型右侧 Agent Trace）
 const NODE_META: Record<string, { label: string; desc: string }> = {
   clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
-  route: { label: '意图路由', desc: '判断导购 / 记忆 / 其他' },
+  route: { label: '意图路由', desc: '判断导购 / 记忆 / 退出 / 其他' },
   retrieve: { label: '商品检索', desc: '召回候选商品' },
   compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
   normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
