@@ -49,6 +49,15 @@ def _build_semantic_query(prefs: dict) -> str:
     return " ".join(parts) if parts else str(prefs.get("category", ""))
 
 
+def _build_real_query(prefs: dict) -> str:
+    """真实源查询文本：保留功能描述，同时带上可表达的结构化偏好。"""
+    parts = []
+    if prefs.get("requirements"):
+        parts.append(str(prefs["requirements"]))
+    parts.extend(str(prefs[key]) for key in _SEMANTIC_ORDER if prefs.get(key))
+    return " ".join(parts)
+
+
 def _zhidemai_enabled() -> bool:
     """真实源开关：显式开启且已配 ZDM_API_KEY 才启用。
 
@@ -133,7 +142,7 @@ async def retrieve_node(state: AgentState, config: RunnableConfig | None = None)
 
     if _source_mode(config) == "real":
         # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话
-        query = _build_semantic_query(prefs) or (
+        query = _build_real_query(prefs) or (
             state["messages"][-1].content if state.get("messages") else ""
         )
         tools = (config or {}).get("configurable", {}).get("mcp_tools", {})
@@ -173,4 +182,6 @@ async def retrieve_node(state: AgentState, config: RunnableConfig | None = None)
     if not candidates:
         # 硬过滤无命中时退回纯语义，保住「总是有结果」的体验
         candidates = await catalog.search(semantic_q, top_k=_TOP_K)
+    # 仿真源只用于展示默认商品卡片，不向前端暴露图片地址；真实源图片仍在 normalized 中保留。
+    candidates = [dict(candidate, image_url="") for candidate in candidates]
     return {"candidates": candidates, "zdm_mode": False}

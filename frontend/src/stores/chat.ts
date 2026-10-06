@@ -6,6 +6,7 @@ import { reactive } from 'vue'
 import { defineStore } from 'pinia'
 import {
   chatStream,
+  cancelProduct,
   deleteConversation,
   fetchConversation,
   fetchConversations,
@@ -57,6 +58,7 @@ export interface Turn {
   clickedSkus: string[]
   priceRaised: boolean
   error: string
+  contextReset: boolean
 }
 
 export interface Session {
@@ -69,8 +71,8 @@ export interface Session {
 // 节点名 → Trace 抽屉展示文案（对齐原型右侧 Agent Trace）
 const NODE_META: Record<string, { label: string; desc: string }> = {
   clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
-  route: { label: '意图路由', desc: '判断导购 vs 其他' },
-  retrieve: { label: '商品检索', desc: '按当前数据源召回候选商品' },
+  route: { label: '意图路由', desc: '判断导购 / 记忆 / 其他' },
+  retrieve: { label: '商品检索', desc: '召回候选商品' },
   compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
   normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
@@ -102,6 +104,21 @@ function memoryEventDescription(event: MemoryEvent | undefined): string {
   return event.keys.length ? ` · ${action}：${memoryKeysLabel(event.keys)}` : ''
 }
 
+function formatPreferences(prefs: Preferences | null): string {
+  if (!prefs) return ''
+  const parts: string[] = []
+  if (prefs.category) parts.push(prefs.category)
+  if (prefs.gender) parts.push(prefs.gender)
+  if (prefs.color) parts.push(prefs.color)
+  if (prefs.style) parts.push(prefs.style)
+  if (prefs.material) parts.push(prefs.material)
+  if (prefs.scene) parts.push(prefs.scene)
+  if (prefs.fit) parts.push(prefs.fit)
+  if (prefs.budget != null) parts.push(`预算 ¥${prefs.budget}`)
+  if (prefs.requirements) parts.push(prefs.requirements)
+  return parts.join(' · ')
+}
+
 function newTurn(user: string, ts?: number): Turn {
   // 必须 reactive：sendMessage 手里攥着原始引用，后续 SSE 事件直接改它的字段，
   // 若为普通对象会绕过 Vue Proxy 的 set 陷阱 → 数据更新但组件不重渲染（spinner 卡死）。
@@ -125,6 +142,7 @@ function newTurn(user: string, ts?: number): Turn {
     clickedSkus: [],
     priceRaised: false,
     error: '',
+    contextReset: false,
   })
 }
 
@@ -149,6 +167,10 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
         } else {
           cur.agentReply = q
         }
+        cur.contextReset = true
+      } else if (q === '未选择推荐商品' || q.startsWith('已下单「') || q === '未下单') {
+        cur.agentReply = q
+        cur.contextReset = q !== '未选择推荐商品'
       } else cur.agentReply = q
     }
   }
@@ -341,9 +363,9 @@ export const useChatStore = defineStore('chat', {
       if (skuId !== turn.recommendation?.items[0]?.sku_id) return
       void recordEvent(this.activeId, 'click', skuId)
     },
-    async selectRealProduct(turnId: string, item: Pick<RecommendItem, 'sku_id' | 'title' | 'url'>): Promise<void> {
+    async selectRealProduct(turnId: string, item: Pick<RecommendItem, 'sku_id' | 'title' | 'url'>): Promise<boolean> {
       const turn = this.activeSession.turns.find((t) => t.id === turnId)
-      if (!turn || !item.url) return
+      if (!turn || !item.url) return false
       this.trackClick(item.sku_id, turnId)
       try {
         await selectProduct(this.activeId, {
@@ -353,13 +375,31 @@ export const useChatStore = defineStore('chat', {
         })
       } catch (e) {
         turn.error = e instanceof Error ? e.message : String(e)
-        return
+        return false
       }
       turn.agentReply = `已选择「${item.title}」`
       turn.agentReplyUrl = item.url
       turn.recommendation = null
       turn.normalized = []
       turn.streaming = false
+      turn.contextReset = true
+      return true
+    },
+    async cancelRealProduct(turnId: string): Promise<boolean> {
+      const turn = this.activeSession.turns.find((t) => t.id === turnId)
+      if (!turn) return false
+      try {
+        await cancelProduct(this.activeId)
+      } catch (e) {
+        turn.error = e instanceof Error ? e.message : String(e)
+        return false
+      }
+      turn.agentReply = '未选择推荐商品'
+      turn.agentReplyUrl = ''
+      turn.recommendation = null
+      turn.normalized = []
+      turn.streaming = false
+      return true
     },
     async run(turn: Turn, stream: () => Promise<void>): Promise<void> {
       try {
@@ -389,6 +429,9 @@ export const useChatStore = defineStore('chat', {
         case 'clarify': {
           turn.preferences = (data.preferences as Preferences) ?? null
           turn.clarifyQuestion = String(data.clarify_question ?? '')
+          const tracePreferences = (data.trace_preferences as Preferences | undefined) ?? turn.preferences
+          const preferenceText = formatPreferences(tracePreferences)
+          if (preferenceText) pushTrace(turn, 'clarify', 'done', ` · 本轮偏好：${preferenceText}`)
           this.patchSubtitle(session, turn.preferences)
           break
         }
@@ -457,10 +500,12 @@ export const useChatStore = defineStore('chat', {
         turn.agentReply = orderSummary(turn)
         turn.recommendation = null
         turn.draftOrder = null
+        turn.contextReset = true
       } else if (turn.order?.status === 'cancelled') {
-        turn.agentReply = '未下单'
+        turn.agentReply = '用户取消下单'
         turn.recommendation = null
         turn.draftOrder = null
+        turn.contextReset = true
       }
     },
     patchSubtitle(session: Session, prefs: Preferences | null): void {

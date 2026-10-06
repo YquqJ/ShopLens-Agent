@@ -5,7 +5,13 @@ import pytest
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
 
-from app.api.chat import SelectProductRequest, build_chat_payload, select_product
+from app.api.chat import (
+    CancelProductRequest,
+    SelectProductRequest,
+    build_chat_payload,
+    cancel_product,
+    select_product,
+)
 
 
 class _Graph:
@@ -72,6 +78,7 @@ async def test_next_chat_after_real_selection_resets_short_term_preferences():
     )
 
     assert payload["preferences"] == {"__reset_session_preferences__": True}
+    assert payload["hop_count"] == 0
 
 
 @pytest.mark.anyio
@@ -92,3 +99,21 @@ async def test_select_product_rejects_item_not_in_current_recommendation(monkeyp
             request,
         )
     assert exc_info.value.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_cancel_product_persists_agent_message_without_resetting_context(monkeypatch):
+    graph = _Graph()
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(graph=graph)))
+    monkeypatch.setattr("app.api.chat.require_conversation_owner", AsyncMock(return_value=1))
+
+    result = await cancel_product(
+        CancelProductRequest(thread_id="thread-1", profile_id="profile-1"),
+        request,
+    )
+
+    assert result == {"cancelled": True}
+    _config, update = graph.updated
+    assert update["messages"][0].content == "未选择推荐商品"
+    assert update["recommendation"] == {}
+    assert "session_reset_pending" not in update

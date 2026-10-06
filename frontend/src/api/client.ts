@@ -172,6 +172,15 @@ export async function selectProduct(
   if (!resp.ok) throw new Error(`商品选择保存失败：${resp.status}`)
 }
 
+export async function cancelProduct(threadId: string): Promise<void> {
+  const resp = await fetch('/api/cancel-product', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ thread_id: threadId, profile_id: getProfileId() }),
+  })
+  if (!resp.ok) throw new Error(`取消商品选择失败：${resp.status}`)
+}
+
 export async function fetchProfilePreferences(): Promise<ProfilePreferences> {
   const params = new URLSearchParams({ profile_id: getProfileId() })
   const resp = await fetch(`/api/profile/preferences?${params}`)

@@ -50,6 +50,7 @@ class AgentState(TypedDict):
     intent: str          # "shopping" | "memory" | "other"
     needs_action: str          # "" | "clarify" | "shopping"
     clarify_question: str      # M8：澄清问句（独立序列化字段，供前端透出；messages 不含）
+    trace_preferences: dict     # 当前澄清轮合并后的偏好，仅供 Trace 展示
     reply: str                 # M8：route 非导购兜底回复（独立序列化字段）
     candidates: list[dict]
     zdm_mode: bool             # 方案 B：真实源（值海纳）模式，检索后直连推荐，跳过比价/下单闭环
@@ -75,6 +76,7 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "intent": "",
         "needs_action": "",
         "clarify_question": "",
+        "trace_preferences": {},
         "reply": "",
         "candidates": [],
         "zdm_mode": False,

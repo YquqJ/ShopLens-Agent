@@ -41,6 +41,7 @@ const degradedList = computed(() => props.turn.degradedSources)
 // HITL 候选选择：默认不选中——最推荐那条只打「推荐」标记，用户点卡片才算「点击查看」并选中
 const selectedSkuId = ref('')
 const selectedPlatform = ref('')
+const realActionPending = ref(false)
 const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value))
 // 比价表/理由区展示对象：点选哪个候选就跟到哪个，未选中默认回落到推荐品 item[0]
 const activeItem = computed(() => selectedItem.value ?? rec.value.items[0])
@@ -64,10 +65,8 @@ function openExternal(url: string): void {
 
 function selectSku(item: RecommendItem): void {
   if (isRealSource.value) {
-    if (item.url) {
-      openExternal(item.url)
-      void store.selectRealProduct(props.turn.id, item)
-    }
+    selectedSkuId.value = item.sku_id
+    store.trackClick(item.sku_id, props.turn.id)
     return
   }
   const skuId = item.sku_id
@@ -76,6 +75,32 @@ function selectSku(item: RecommendItem): void {
   selectedSkuId.value = skuId
   selectedPlatform.value = selectedBest.value
   store.trackClick(skuId, props.turn.id)
+}
+
+function hasImage(item: RecommendItem): boolean {
+  return isRealSource.value && Boolean(item.image_url)
+}
+
+async function confirmReal(): Promise<void> {
+  const item = selectedItem.value
+  if (!item?.url || realActionPending.value) return
+  realActionPending.value = true
+  try {
+    const saved = await store.selectRealProduct(props.turn.id, item)
+    if (saved) openExternal(item.url)
+  } finally {
+    realActionPending.value = false
+  }
+}
+
+async function cancelReal(): Promise<void> {
+  if (realActionPending.value) return
+  realActionPending.value = true
+  try {
+    await store.cancelRealProduct(props.turn.id)
+  } finally {
+    realActionPending.value = false
+  }
 }
 
 interface HitlSummary {
@@ -144,8 +169,8 @@ async function cancel(): Promise<void> {
       :class="{ selected: selectedSkuId === item.sku_id }"
       @click="selectSku(item)"
     >
-      <div class="thumb" :class="{ 'thumb-image': item.image_url }">
-        <img v-if="item.image_url" :src="item.image_url" :alt="item.title" loading="lazy" />
+      <div class="thumb" :class="{ 'thumb-image': hasImage(item) }">
+        <img v-if="hasImage(item)" :src="item.image_url" :alt="item.title" loading="lazy" />
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9z" /><path d="M2 9h20M12 21 8 9l4-6 4 6-4 12" /></svg>
       </div>
       <div>
@@ -213,6 +238,18 @@ async function cancel(): Promise<void> {
       <div v-if="activeNormalized" class="reason-item">
         <span class="src">出处</span>
         {{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}，综合成本 {{ fmt(activeNormalized.best.total_cost) }}
+      </div>
+    </div>
+
+    <!-- 真实源商品选择确认：确认后才打开外链，取消则结束本轮推荐 -->
+    <div v-if="isRealSource" class="hitl">
+      <h3>商品选择确认</h3>
+      <p>选中商品后点击确认，才会打开商品外链。</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" :disabled="realActionPending || !selectedSkuId" @click="confirmReal">
+          {{ realActionPending ? '处理中…' : '确认' }}
+        </button>
+        <button class="btn btn-ghost" :disabled="realActionPending" @click="cancelReal">取消</button>
       </div>
     </div>
 

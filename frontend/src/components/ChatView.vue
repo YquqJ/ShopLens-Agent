@@ -28,7 +28,7 @@ function clarificationRound(index: number): number {
   let count = 0
   const turns = store.activeSession.turns
   for (let cursor = index; cursor >= 0; cursor -= 1) {
-    if (cursor !== index && turns[cursor].order?.status === 'placed') break
+    if (cursor !== index && (turns[cursor].contextReset || turns[cursor].order?.status === 'placed')) break
     if (turns[cursor].clarifyQuestion) count += 1
   }
   return count

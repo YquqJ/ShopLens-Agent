@@ -51,6 +51,11 @@ class SelectProductRequest(BaseModel):
     url: str
 
 
+class CancelProductRequest(BaseModel):
+    thread_id: str
+    profile_id: str
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -234,6 +239,25 @@ async def select_product(req: SelectProductRequest, request: Request) -> dict:
         "session_reset_pending": True,
     })
     return {"selected": True}
+
+
+@router.post("/cancel-product")
+async def cancel_product(req: CancelProductRequest, request: Request) -> dict:
+    """Persist a real-source cancellation and close the current recommendation loop."""
+    try:
+        await require_conversation_owner(req.thread_id, req.profile_id)
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="会话不存在") from exc
+
+    graph = request.app.state.graph
+    cfg = {"configurable": {"thread_id": req.thread_id}}
+    await graph.aupdate_state(cfg, {
+        "messages": [AIMessage("未选择推荐商品", additional_kwargs={"ts": time.time()})],
+        "recommendation": {},
+        "normalized": [],
+        "candidates": [],
+    })
+    return {"cancelled": True}
 
 
 @router.get("/source-modes")

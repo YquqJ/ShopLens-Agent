@@ -82,7 +82,11 @@ async def clarify_node(state: AgentState) -> dict:
     ])
 
     # 本轮提取 + 历史合并（非空覆盖，空字段回退历史）
-    new_prefs = result.preferences.model_dump()
+    new_prefs = {
+        key: value
+        for key, value in result.preferences.model_dump().items()
+        if value not in (None, "", [])
+    }
     merged = merge_preferences(prev, new_prefs)
 
     # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification
@@ -90,6 +94,7 @@ async def clarify_node(state: AgentState) -> dict:
 
     update: dict = {
         "preferences": new_prefs,   # 经 merge reducer 与历史合并
+        "trace_preferences": merged,
         "hop_count": state.get("hop_count", 0) + 1,
     }
     if needs:

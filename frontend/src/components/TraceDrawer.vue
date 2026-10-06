@@ -9,6 +9,7 @@ const turn = computed(() => store.activeSession.turns.at(-1))
 const streaming = computed(() => turn.value?.streaming === true)
 const shortThread = computed(() => store.activeSession.id.replace(/-/g, '').slice(0, 8))
 const sourceModeLabel = computed(() => store.sourceMode === 'real' ? '值得买真实源' : '本地仿真源')
+const showBreakerDemo = computed(() => store.sourceMode === 'mock')
 
 const SOURCES = [
   { key: 'jd', label: '京东' },
@@ -62,13 +63,13 @@ function stopPolling(): void {
 }
 
 // 只在导购流式进行时轮询（此刻才可能触发熔断），空闲不请求；其余时候点「刷新状态」手动看
-watch(streaming, (on) => {
-  if (on) startPolling()
+watch([streaming, showBreakerDemo], ([on, showDemo]) => {
+  if (on && showDemo) startPolling()
   else stopPolling()
 })
 
 onMounted(() => {
-  void refreshBreakers()
+  if (showBreakerDemo.value) void refreshBreakers()
 })
 
 onUnmounted(() => {
@@ -106,7 +107,7 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <div class="debug-panel">
+    <div v-if="showBreakerDemo" class="debug-panel">
       <div class="debug-head">
         <span class="debug-title">熔断演示 · 故障注入</span>
         <button class="debug-refresh" @click="refreshBreakers">刷新状态</button>

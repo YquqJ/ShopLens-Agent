@@ -81,7 +81,12 @@ def test_mcp_adapter_registers_real_source_server():
 async def test_retrieve_explicit_mock_mode_ignores_legacy_real_source_switch(monkeypatch):
     monkeypatch.setattr(retrieve, "_zhidemai_enabled", lambda: True)
     search = pytest.importorskip("unittest.mock").AsyncMock(return_value=[
-        {"sku_id": "SKU0001", "title": "仿真耳机", "category": "耳机"},
+        {
+            "sku_id": "SKU0001",
+            "title": "仿真耳机",
+            "category": "耳机",
+            "image_url": "https://picsum.photos/seed/sku0001/400/400",
+        },
     ])
     monkeypatch.setattr(retrieve.catalog, "search", search)
 
@@ -92,6 +97,7 @@ async def test_retrieve_explicit_mock_mode_ignores_legacy_real_source_switch(mon
 
     assert result["zdm_mode"] is False
     assert result["candidates"][0]["sku_id"] == "SKU0001"
+    assert result["candidates"][0]["image_url"] == ""
     search.assert_awaited_once()
 
 
@@ -121,7 +127,13 @@ async def test_retrieve_real_mode_calls_zhidemai_mcp_and_builds_recommendable_it
 
     result = await retrieve.retrieve_node(
         {
-            "preferences": {"category": "耳机", "budget": 500},
+            "preferences": {
+                "category": "耳机",
+                "color": "白色",
+                "gender": "男款",
+                "requirements": "降噪",
+                "budget": 500,
+            },
             "profile_preferences": {},
             "messages": [HumanMessage("想买降噪耳机")],
         },
@@ -132,7 +144,7 @@ async def test_retrieve_real_mode_calls_zhidemai_mcp_and_builds_recommendable_it
     )
 
     assert tool.calls == [{
-        "product_query": "耳机",
+        "product_query": "降噪 男款 白色 耳机",
         "size": 5,
         "category_name": "耳机",
         "max_price": 500,

@@ -122,6 +122,8 @@ async def test_clarify_node_can_merge_profile_preferences(monkeypatch) -> None:
     })
     assert result["needs_action"] == "clarify"
     assert result["clarify_question"] == "预算和性别？"
+    assert result["preferences"] == {"category": "卫衣", "requirements": "显瘦透气"}
+    assert result["trace_preferences"] == {"category": "卫衣", "requirements": "显瘦透气"}
 
 
 def test_profile_key_uses_browser_profile_then_thread_fallback() -> None:
