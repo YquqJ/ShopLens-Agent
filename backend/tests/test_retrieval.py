@@ -22,11 +22,12 @@ def test_build_description_contains_category_and_all_attribute_values():
 def test_build_filters_keeps_only_closed_fields():
     prefs = {
         "category": "T恤", "color": "黑色", "material": "纯棉", "fit": "修身",
-        "scene": "通勤", "budget": 200.0, "requirements": "显瘦一点",
+        "scene": "通勤", "gender": "女款", "size": "M",
+        "budget": 200.0, "requirements": "显瘦一点",
     }
     assert _build_filters(prefs) == {
         "category": "T恤", "color": "黑色", "material": "纯棉",
-        "scene": "通勤", "fit": "修身",
+        "scene": "通勤", "fit": "修身", "gender": "女款", "size": "M",
     }
 
 
@@ -35,6 +36,18 @@ def test_build_filters_falls_back_to_profile_lists():
     filters = _build_filters(prefs)
     assert filters["category"] == "T恤"
     assert filters["color"] == ["黑色", "白色"]  # 会话无 color，回退长期偏好（$in）
+
+
+def test_build_filters_falls_back_to_gender_and_size_profile_lists():
+    assert _build_filters({
+        "category": "衬衫",
+        "preferred_genders": ["男款"],
+        "preferred_sizes": ["L"],
+    }) == {
+        "category": "衬衫",
+        "gender": ["男款"],
+        "size": ["L"],
+    }
 
 
 def test_build_semantic_query_prefers_requirements():
@@ -56,6 +69,9 @@ def test_matches_respects_hard_constraints():
     assert _matches(item, {"category": "外套"}) is False
     assert _matches(item, {"color": ["黑色", "白色"]}) is True  # 列表约束命中
     assert _matches(item, {"fit": "宽松"}) is False
+    item["attributes"].update({"性别": "女款", "尺码": "M"})
+    assert _matches(item, {"gender": "女款", "size": "M"}) is True
+    assert _matches(item, {"gender": "男款"}) is False
     assert _matches(item, {}) is True  # 空约束 = 全部相关
 
 
@@ -126,6 +142,19 @@ async def test_retrieve_real_mode_calls_zhidemai_mcp_and_builds_recommendable_it
     assert result["zdm_mode"] is True
     assert result["normalized"][0]["sku_id"] == "ZDM01"
     assert result["normalized"][0]["best"]["platform"] == "京东"
+
+
+def test_real_normalized_item_preserves_picture_and_external_url():
+    result = retrieve._zhidemai_to_normalized([{
+        "title": "真实商品",
+        "price": 199,
+        "mall": "京东",
+        "picture": "https://img.example/item.jpg",
+        "url": "https://mall.example/item",
+    }])
+
+    assert result[0]["image_url"] == "https://img.example/item.jpg"
+    assert result[0]["url"] == "https://mall.example/item"
 
 
 @pytest.mark.anyio

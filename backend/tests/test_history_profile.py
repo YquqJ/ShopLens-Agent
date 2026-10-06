@@ -25,6 +25,17 @@ class SnapshotGraph:
         )
 
 
+class EmptyRecommendationGraph:
+    async def aget_state(self, _config: dict) -> SimpleNamespace:
+        return SimpleNamespace(
+            values={
+                "messages": [],
+                "recommendation": {"summary": "", "items": [], "degraded_sources": []},
+            },
+            interrupts=[],
+        )
+
+
 @pytest.mark.anyio
 async def test_history_detail_uses_current_browser_profile_over_thread_snapshot(monkeypatch) -> None:
     get_preferences = AsyncMock(return_value={"preferred_colors": ["黑色"]})
@@ -59,6 +70,20 @@ async def test_history_detail_hides_thread_from_a_mismatched_browser_profile(mon
         "browser-profile-2",
     )
     assert detail is None
+
+
+@pytest.mark.anyio
+async def test_history_detail_does_not_restore_empty_recommendation_as_a_message(monkeypatch) -> None:
+    monkeypatch.setattr(history, "require_conversation_owner", AsyncMock(return_value=1))
+    monkeypatch.setattr(history.profile, "get_preferences", AsyncMock(return_value={}))
+
+    detail = await history.get_conversation(
+        EmptyRecommendationGraph(),
+        "thread-with-empty-recommendation",
+        profile_id="browser-profile-1",
+    )
+
+    assert detail["recommendation"] is None
 
 
 @pytest.fixture

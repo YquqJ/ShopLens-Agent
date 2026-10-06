@@ -7,6 +7,8 @@ DURABLE_MEMORY_KEYS = frozenset({
     "preferred_colors",
     "preferred_styles",
     "preferred_materials",
+    "preferred_genders",
+    "preferred_sizes",
     "avoid_preferences",
 })
 
@@ -14,6 +16,8 @@ _TAG_LABELS = (
     ("preferred_colors", "颜色"),
     ("preferred_styles", "风格"),
     ("preferred_materials", "材质"),
+    ("preferred_genders", "性别"),
+    ("preferred_sizes", "尺码"),
     ("avoid_preferences", "避雷"),
 )
 

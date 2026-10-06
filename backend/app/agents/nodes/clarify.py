@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.agents.llm import MAIN_MODEL, get_structured_llm
+from app.agents.nodes.memory import build_effective_preferences
 from app.agents.state import AgentState, merge_preferences
 
 
@@ -24,6 +25,8 @@ class Preferences(BaseModel):
     material: str | None = Field(None, description="材质，如 纯棉/亚麻/羊毛（无则留空）")
     scene: str | None = Field(None, description="穿着场景，如 通勤/周末/旅行（无则留空）")
     fit: str | None = Field(None, description="版型偏好，如 修身/宽松/直筒/落肩（无则留空）")
+    gender: str | None = Field(None, description="性别偏好，如 男款/女款（无则留空）")
+    size: str | None = Field(None, description="尺码偏好，如 S/M/L/XL 或 40（无则留空）")
     requirements: str | None = Field(None, description="无法归入闭集字段的功能/描述需求，如 显瘦一点、透气（无则留空）")
 
 
@@ -34,20 +37,22 @@ class ClarifyResult(BaseModel):
 
 
 _SYSTEM = (
-    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景/版型），拿不准的字段留空。"
-    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋；版型可填 修身/宽松/直筒/落肩 等闭集词。"
+    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景/版型/性别/尺码），拿不准的字段留空。"
+    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋；版型可填 修身/宽松/直筒/落肩，性别可填男款/女款，尺码按服饰或鞋码填写。"
     "无法归入这些闭集字段的功能/描述语（如 显瘦一点、透气）填到 requirements。"
-    "关键信息=品类+预算，缺任一即 needs_clarification=True。"
+    "关键信息=品类+预算+性别，缺任一即 needs_clarification=True。性别只允许男款或女款。"
 )
 
 
 def _missing(prefs: dict) -> list[str]:
-    """合并后仍缺的关键字段（品类/预算）追问文案。"""
+    """合并后仍缺的关键字段（品类/预算/性别）追问文案。"""
     missing = []
     if not prefs.get("category"):
         missing.append("想买什么服饰品类（如T恤、衬衫、外套等）")
     if prefs.get("budget") is None:
         missing.append("预算大概多少")
+    if not prefs.get("gender") and not prefs.get("preferred_genders"):
+        missing.append("男款还是女款")
     return missing
 
 
@@ -62,7 +67,9 @@ def _default_question(prefs: dict) -> str:
 async def clarify_node(state: AgentState) -> dict:
     structured = get_structured_llm(MAIN_MODEL, ClarifyResult)
     latest = state["messages"][-1].content if state["messages"] else ""
-    prev = state.get("preferences") or {}
+    prev = build_effective_preferences(
+        state.get("preferences") or {}, state.get("profile_preferences") or {},
+    )
 
     # 把历史偏好喂回 prompt：让 LLM 在已确认信息上补缺失字段，避免重复追问
     system = _SYSTEM
@@ -80,7 +87,7 @@ async def clarify_node(state: AgentState) -> dict:
     merged = merge_preferences(prev, new_prefs)
 
     # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification
-    needs = not merged.get("category") or merged.get("budget") is None
+    needs = bool(_missing(merged))
 
     update: dict = {
         "preferences": new_prefs,   # 经 merge reducer 与历史合并

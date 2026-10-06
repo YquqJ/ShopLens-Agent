@@ -21,7 +21,6 @@ function chooseSourceMode(mode: SourceMode): void {
 
 <template>
   <div class="source-mode" role="group" aria-label="数据源模式">
-    <span class="source-mode-label">数据源</span>
     <button
       type="button"
       class="source-mode-btn"

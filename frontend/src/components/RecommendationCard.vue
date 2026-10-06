@@ -50,7 +50,27 @@ const selectedBest = computed(() => bySku.value[selectedSkuId.value]?.best?.plat
 const selectedQuote = computed<Quote | null>(
   () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
 )
-function selectSku(skuId: string): void {
+const isRealSource = computed(() => rec.value.items.some((item) => Boolean(item.url)))
+
+function openExternal(url: string): void {
+  try {
+    const target = new URL(url)
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return
+    window.open(target.toString(), '_blank', 'noopener,noreferrer')
+  } catch {
+    // 外链格式异常时不打开窗口，仍保留当前推荐卡片。
+  }
+}
+
+function selectSku(item: RecommendItem): void {
+  if (isRealSource.value) {
+    if (item.url) {
+      openExternal(item.url)
+      void store.selectRealProduct(props.turn.id, item)
+    }
+    return
+  }
+  const skuId = item.sku_id
   // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
   if (selectedSkuId.value === skuId) return
   selectedSkuId.value = skuId
@@ -122,9 +142,10 @@ async function cancel(): Promise<void> {
       :key="item.sku_id"
       class="cand"
       :class="{ selected: selectedSkuId === item.sku_id }"
-      @click="selectSku(item.sku_id)"
+      @click="selectSku(item)"
     >
-      <div class="thumb">
+      <div class="thumb" :class="{ 'thumb-image': item.image_url }">
+        <img v-if="item.image_url" :src="item.image_url" :alt="item.title" loading="lazy" />
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9z" /><path d="M2 9h20M12 21 8 9l4-6 4 6-4 12" /></svg>
       </div>
       <div>

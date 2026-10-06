@@ -35,3 +35,34 @@ async def test_recommend_returns_a_budget_message_without_calling_the_llm(monkey
 
 def test_graph_skips_hitl_when_no_budget_eligible_recommendation_exists() -> None:
     assert _after_recommend({"zdm_mode": False, "recommendation": {"items": []}}) == "end"
+
+
+@pytest.mark.anyio
+async def test_recommend_preserves_real_product_media_fields(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from app.agents.nodes import recommend
+
+    class _FakeStructured:
+        async def ainvoke(self, _messages):
+            return SimpleNamespace(
+                summary="真实商品推荐",
+                reasons=[SimpleNamespace(sku_id="ZDM01", reason="价格符合预算")],
+            )
+
+    monkeypatch.setattr(recommend, "get_structured_llm", lambda *_args: _FakeStructured())
+    result = await recommend_node({
+        "normalized": [{
+            "sku_id": "ZDM01",
+            "title": "真实商品",
+            "attributes": {"品牌": "Example"},
+            "image_url": "https://img.example/item.jpg",
+            "url": "https://mall.example/item",
+            "best": {"platform": "京东", "final_price": 199, "price": 199, "total_cost": 199},
+        }],
+        "preferences": {"budget": 300},
+        "profile_preferences": {},
+        "degraded_sources": [],
+    })
+
+    assert result["recommendation"]["items"][0]["image_url"] == "https://img.example/item.jpg"
+    assert result["recommendation"]["items"][0]["url"] == "https://mall.example/item"

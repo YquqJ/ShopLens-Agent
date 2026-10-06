@@ -154,6 +154,24 @@ export async function deleteConversation(threadId: string): Promise<void> {
   if (!resp.ok) throw new Error(`会话删除失败：${resp.status}`)
 }
 
+export async function selectProduct(
+  threadId: string,
+  item: { sku_id: string; title: string; url: string },
+): Promise<void> {
+  const resp = await fetch('/api/select-product', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      thread_id: threadId,
+      profile_id: getProfileId(),
+      sku_id: item.sku_id,
+      title: item.title,
+      url: item.url,
+    }),
+  })
+  if (!resp.ok) throw new Error(`商品选择保存失败：${resp.status}`)
+}
+
 export async function fetchProfilePreferences(): Promise<ProfilePreferences> {
   const params = new URLSearchParams({ profile_id: getProfileId() })
   const resp = await fetch(`/api/profile/preferences?${params}`)

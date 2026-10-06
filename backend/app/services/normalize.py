@@ -32,6 +32,8 @@ def normalize(quotes: list[dict], candidates: list[dict]) -> list[dict]:
                 "title": m.get("title", sku),
                 "category": m.get("category"),
                 "attributes": m.get("attributes", {}),
+                "image_url": m.get("image_url", ""),
+                "url": m.get("url", ""),
                 "catalog_price": m.get("price"),
                 "quotes": [],
             }

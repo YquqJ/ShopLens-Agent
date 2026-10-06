@@ -6,10 +6,13 @@
 - graph / mcp_tools 由 main.py lifespan 注入到 app.state，随进程共享长会话。
 """
 import json
+import time
 from typing import AsyncGenerator, Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from pydantic import BaseModel
 
@@ -38,6 +41,14 @@ class ResumeRequest(BaseModel):
     profile_id: str
     sku_id: str | None = None      # 方案 B：用户在候选间选择（可选）
     platform: str | None = None    # 方案 B：用户在平台间选择（可选）
+
+
+class SelectProductRequest(BaseModel):
+    thread_id: str
+    profile_id: str
+    sku_id: str
+    title: str
+    url: str
 
 
 def _sse(event: str, data: dict) -> str:
@@ -186,6 +197,42 @@ async def resume(req: ResumeRequest, request: Request) -> StreamingResponse:
             yield _sse("error", {"message": str(e)})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@router.post("/select-product")
+async def select_product(req: SelectProductRequest, request: Request) -> dict:
+    """Persist a real-source selection as an assistant message in the graph checkpoint."""
+    try:
+        await require_conversation_owner(req.thread_id, req.profile_id)
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="会话不存在") from exc
+
+    parsed = urlparse(req.url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="商品链接无效")
+
+    graph = request.app.state.graph
+    cfg = {"configurable": {"thread_id": req.thread_id}}
+    snapshot = await graph.aget_state(cfg)
+    recommendation = (snapshot.values or {}).get("recommendation") or {}
+    item = next(
+        (item for item in recommendation.get("items", []) if item.get("sku_id") == req.sku_id),
+        None,
+    )
+    if item is None or item.get("url") != req.url or item.get("title") != req.title:
+        raise HTTPException(status_code=400, detail="所选商品不在当前推荐结果中")
+
+    message = AIMessage(
+        f"已选择「{req.title}」\n链接：{req.url}",
+        additional_kwargs={"ts": time.time()},
+    )
+    await graph.aupdate_state(cfg, {
+        "messages": [message],
+        "recommendation": {},
+        "normalized": [],
+        "candidates": [],
+    })
+    return {"selected": True}
 
 
 @router.get("/source-modes")

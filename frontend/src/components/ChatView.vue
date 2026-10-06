@@ -20,7 +20,8 @@ function timeLabel(ts: number): string {
 
 async function scrollToBottom(): Promise<void> {
   await nextTick()
-  if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+  const container = scrollEl.value?.closest('.content') as HTMLElement | null
+  if (container) container.scrollTop = container.scrollHeight
 }
 
 function clarificationRound(index: number): number {
@@ -35,6 +36,7 @@ function clarificationRound(index: number): number {
 
 // 深监听会话：流式推进（新 turn / 节点事件）时自动滚到底
 watch(() => store.activeSession, scrollToBottom, { deep: true })
+watch(() => store.activeSession.turns.length, scrollToBottom)
 </script>
 
 <template>
@@ -69,12 +71,21 @@ watch(() => store.activeSession, scrollToBottom, { deep: true })
         <div class="avatar">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a4 4 0 0 1 4 4c0 .83-.26 1.6-.7 2.24a6 6 0 0 1 4.3 5.76v1a1 1 0 0 1-1 1H5.4a1 1 0 0 1-1-1v-1a6 6 0 0 1 4.3-5.76A3.98 3.98 0 0 1 8 7a4 4 0 0 1 4-4z"/></svg>
         </div>
-        <div class="bubble">{{ turn.agentReply }}</div>
+        <div class="bubble">
+          <div>{{ turn.agentReply }}</div>
+          <a
+            v-if="turn.agentReplyUrl"
+            class="agent-link"
+            :href="turn.agentReplyUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >链接：{{ turn.agentReplyUrl }}</a>
+        </div>
       </div>
 
       <!-- 推荐结果 + 比价表 + HITL -->
       <RecommendationCard v-if="turn.recommendation?.items.length" :turn="turn" />
-      <div v-else-if="turn.recommendation" class="msg agent">
+      <div v-else-if="turn.recommendation?.summary" class="msg agent">
         <div class="avatar">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a4 4 0 0 1 4 4c0 .83-.26 1.6-.7 2.24a6 6 0 0 1 4.3 5.76v1a1 1 0 0 1-1 1H5.4a1 1 0 0 1-1-1v-1a6 6 0 0 1 4.3-5.76A3.98 3.98 0 0 1 8 7a4 4 0 0 1 4-4z"/></svg>
         </div>

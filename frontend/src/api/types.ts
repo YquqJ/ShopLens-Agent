@@ -13,6 +13,8 @@ export interface Preferences {
   style: string | null
   material: string | null
   scene: string | null
+  gender: string | null
+  size: string | null
 }
 
 export interface Candidate {
@@ -47,6 +49,8 @@ export interface NormalizedItem {
   title: string
   category: string | null
   attributes: Record<string, string>
+  image_url?: string
+  url?: string
   quotes: Quote[]
   best: Quote
   final_price: number
@@ -58,6 +62,8 @@ export interface RecommendItem {
   final_price: number
   platform: string
   attributes: Record<string, string>
+  image_url?: string
+  url?: string
   reason: string
 }
 
@@ -113,6 +119,8 @@ export interface ProfilePreferences {
   preferred_colors?: string[]
   preferred_styles?: string[]
   preferred_materials?: string[]
+  preferred_genders?: string[]
+  preferred_sizes?: string[]
   avoid_preferences?: string[]
 }
 

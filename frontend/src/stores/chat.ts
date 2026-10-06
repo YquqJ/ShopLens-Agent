@@ -13,6 +13,7 @@ import {
   fetchSourceModes,
   recordEvent,
   resumeStream,
+  selectProduct,
 } from '../api/client'
 import type {
   ConversationDetail,
@@ -23,6 +24,7 @@ import type {
   Preferences,
   ProfilePreferences,
   Recommendation,
+  RecommendItem,
   SSEEvent,
   SourceMode,
   SourceModes,
@@ -41,6 +43,7 @@ export interface Turn {
   ts: number
   clarifyQuestion: string
   agentReply: string
+  agentReplyUrl: string
   preferences: Preferences | null
   normalized: NormalizedItem[]
   recommendation: Recommendation | null
@@ -82,6 +85,8 @@ const MEMORY_KEY_LABELS: Record<string, string> = {
   preferred_colors: '颜色',
   preferred_styles: '风格',
   preferred_materials: '材质',
+  preferred_genders: '性别',
+  preferred_sizes: '尺码',
   avoid_preferences: '避雷项',
 }
 
@@ -107,6 +112,7 @@ function newTurn(user: string, ts?: number): Turn {
     ts: ts ?? Date.now(),
     clarifyQuestion: '',
     agentReply: '',
+    agentReplyUrl: '',
     preferences: null,
     normalized: [],
     recommendation: null,
@@ -136,7 +142,15 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
     } else if (cur) {
       const q = m.content
       if (q.endsWith('？') || q.endsWith('?')) cur.clarifyQuestion = q
-      else cur.agentReply = q
+      else if (q.startsWith('已选择「')) {
+        const match = q.match(/^已选择「(.+?)」\n链接：(https?:\/\/\S+)$/)
+        if (match) {
+          cur.agentReply = `已选择「${match[1]}」`
+          cur.agentReplyUrl = match[2]
+        } else {
+          cur.agentReply = q
+        }
+      } else cur.agentReply = q
     }
   }
   const last = turns.at(-1)
@@ -146,7 +160,9 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
     const resolved = d.order?.status === 'placed' || d.order?.status === 'cancelled'
     if (!resolved) {
       last.normalized = d.normalized ?? []
-      last.recommendation = d.recommendation
+      last.recommendation = d.recommendation?.summary || d.recommendation?.items?.length
+        ? d.recommendation
+        : null
       last.degradedSources = d.recommendation?.degraded_sources ?? []
       last.draftOrder = d.draft_order
       last.order = d.order
@@ -325,6 +341,26 @@ export const useChatStore = defineStore('chat', {
       // 漏斗「点击推荐」只统计点击👍推荐品，备选点击不计数
       if (skuId !== turn.recommendation?.items[0]?.sku_id) return
       void recordEvent(this.activeId, 'click', skuId)
+    },
+    async selectRealProduct(turnId: string, item: Pick<RecommendItem, 'sku_id' | 'title' | 'url'>): Promise<void> {
+      const turn = this.activeSession.turns.find((t) => t.id === turnId)
+      if (!turn || !item.url) return
+      this.trackClick(item.sku_id, turnId)
+      try {
+        await selectProduct(this.activeId, {
+          sku_id: item.sku_id,
+          title: item.title,
+          url: item.url,
+        })
+      } catch (e) {
+        turn.error = e instanceof Error ? e.message : String(e)
+        return
+      }
+      turn.agentReply = `已选择「${item.title}」`
+      turn.agentReplyUrl = item.url
+      turn.recommendation = null
+      turn.normalized = []
+      turn.streaming = false
     },
     async run(turn: Turn, stream: () => Promise<void>): Promise<void> {
       try {

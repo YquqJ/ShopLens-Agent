@@ -88,6 +88,8 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
     snap = await graph.aget_state({"configurable": {"thread_id": thread_id}})
     values = snap.values or {}
     rec = values.get("recommendation") or {}
+    if not rec.get("summary") and not rec.get("items"):
+        rec = None
     awaiting = bool(snap.interrupts)
     draft = values.get("draft_order")
     if awaiting and snap.interrupts[0].value:
@@ -102,7 +104,7 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
         "profile_preferences": current_profile,
         "memory_events": values.get("memory_events") or [],
         "normalized": values.get("normalized") or [],
-        "recommendation": rec or None,
+        "recommendation": rec,
         "draft_order": draft,
         "order": values.get("order"),
         "price_raised": bool(values.get("price_raised")),

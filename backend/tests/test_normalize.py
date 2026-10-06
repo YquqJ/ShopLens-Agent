@@ -36,6 +36,19 @@ def test_normalize_chooses_comprehensive_best_even_when_delivery_is_slower() -> 
     assert item["best"]["total_cost"] == 177
 
 
+def test_normalize_preserves_catalog_media_links() -> None:
+    candidates = [{
+        **_CANDIDATES[0],
+        "image_url": "https://img.example/catalog.jpg",
+        "url": "https://mall.example/catalog",
+    }]
+
+    item = normalize(_QUOTES, candidates)[0]
+
+    assert item["image_url"] == "https://img.example/catalog.jpg"
+    assert item["url"] == "https://mall.example/catalog"
+
+
 @pytest.mark.anyio
 async def test_normalize_node_ignores_legacy_profile_platform_preference() -> None:
     result = await normalize_node({

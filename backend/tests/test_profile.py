@@ -57,6 +57,15 @@ def test_normalize_updates_keeps_durable_values_and_shared_provenance() -> None:
     }
 
 
+def test_normalize_updates_keeps_gender_and_size_preferences() -> None:
+    values, forgotten, _ = normalize_updates({
+        "preferred_genders": ["男款"],
+        "preferred_sizes": ["L"],
+    })
+    assert values == {"preferred_genders": ["男款"], "preferred_sizes": ["L"]}
+    assert forgotten == set()
+
+
 @pytest.mark.anyio
 async def test_profile_budget_range_is_never_persisted(profile_key: str) -> None:
     saved = await apply_updates({

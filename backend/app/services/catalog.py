@@ -11,7 +11,7 @@
 - Chroma 只存「向量 + 最小元数据」，价格/库存唯一事实来源是 Postgres——
   保证「价格/库存来自落库，非 LLM 现编」；
 - 检索升级：embed 自然语言 description（非 title），attributes 拍平成顶层 ASCII 元数据字段；
-  闭集硬约束（品类/颜色/风格/材质/场景/版型）走 Chroma where 过滤，语义只做软相关；
+  闭集硬约束（品类/颜色/风格/材质/场景/版型/性别/尺码）走 Chroma where 过滤，语义只做软相关；
   gte-rerank / BM25 重排仍留后续，先用量化尺子测「硬过滤 vs 纯语义」的差值再对症。
 """
 import asyncio
@@ -33,14 +33,19 @@ COLLECTION_NAME = "products"
 _EMBED_BATCH = 10
 
 # ---- seed 配置：服饰类目 → (可复用属性维度, 基准价) ----
-# 四个属性键在类目间保持一致，取值按类目区分，避免不合理的材质组合。
+# 属性维度在类目间保持一致，取值按类目区分，避免不合理的材质/尺码组合。
 COLORS = ["黑色", "白色", "深蓝", "米白", "卡其"]
+GENDERS = ["男款", "女款"]
+APPAREL_SIZES = ["S", "M", "L", "XL"]
+SHOE_SIZES = ["36", "37", "38", "39", "40", "41", "42", "43"]
 T_SHIRT_ATTRIBUTES = {
     "颜色": COLORS,
     "风格": ["简约", "街头", "运动"],
     "材质": ["纯棉", "亚麻"],
     "场景": ["周末", "旅行", "运动"],
     "版型": ["宽松", "修身", "直筒"],
+    "性别": GENDERS,
+    "尺码": APPAREL_SIZES,
 }
 SHIRT_ATTRIBUTES = {
     "颜色": COLORS,
@@ -48,6 +53,8 @@ SHIRT_ATTRIBUTES = {
     "材质": ["纯棉", "亚麻", "牛仔"],
     "场景": ["通勤", "约会", "旅行"],
     "版型": ["修身", "宽松", "标准"],
+    "性别": GENDERS,
+    "尺码": APPAREL_SIZES,
 }
 SWEATSHIRT_ATTRIBUTES = {
     "颜色": COLORS,
@@ -55,6 +62,8 @@ SWEATSHIRT_ATTRIBUTES = {
     "材质": ["纯棉", "抓绒"],
     "场景": ["周末", "旅行", "运动"],
     "版型": ["宽松", "落肩", "修身"],
+    "性别": GENDERS,
+    "尺码": APPAREL_SIZES,
 }
 OUTERWEAR_ATTRIBUTES = {
     "颜色": COLORS,
@@ -62,6 +71,8 @@ OUTERWEAR_ATTRIBUTES = {
     "材质": ["羊毛", "牛仔", "棉服"],
     "场景": ["通勤", "旅行", "约会"],
     "版型": ["修身", "宽松", "直筒"],
+    "性别": GENDERS,
+    "尺码": APPAREL_SIZES,
 }
 TROUSER_ATTRIBUTES = {
     "颜色": COLORS,
@@ -69,6 +80,8 @@ TROUSER_ATTRIBUTES = {
     "材质": ["纯棉", "亚麻", "牛仔"],
     "场景": ["通勤", "周末", "旅行"],
     "版型": ["直筒", "修身", "宽松"],
+    "性别": GENDERS,
+    "尺码": APPAREL_SIZES,
 }
 SHOE_ATTRIBUTES = {
     "颜色": COLORS,
@@ -76,6 +89,8 @@ SHOE_ATTRIBUTES = {
     "材质": ["真皮", "帆布", "网面"],
     "场景": ["通勤", "周末", "运动"],
     "版型": ["标准", "宽松", "窄楦"],
+    "性别": GENDERS,
+    "尺码": SHOE_SIZES,
 }
 
 # 每个类目：统一属性维度 + 基准价（元）
@@ -119,19 +134,22 @@ def build_seed_products(count: int = 200) -> list[dict]:
     return products
 
 
-# 属性中文 key → Chroma 元数据 ASCII key（供 where 硬过滤；版型随本次检索升级加入）
+# 属性中文 key → Chroma 元数据 ASCII key（供 where 硬过滤）
 _ATTR_FILTER_KEYS = {
     "颜色": "color",
     "风格": "style",
     "材质": "material",
     "场景": "scene",
     "版型": "fit",
+    "性别": "gender",
+    "尺码": "size",
 }
 
 
 def build_description(attributes: dict, category: str) -> str:
-    """由闭集属性拼一句可嵌入的自然语言描述（含版型/场景/材质，供语义召回）。"""
+    """由闭集属性拼一句可嵌入的自然语言描述（含服饰筛选维度，供语义召回）。"""
     return (
+        f"{attributes.get('性别', '')}{attributes.get('尺码', '')}码，"
         f"{attributes.get('颜色', '')}{attributes.get('风格', '')}风{category}，"
         f"{attributes.get('材质', '')}面料，{attributes.get('版型', '')}版型，"
         f"适合{attributes.get('场景', '')}穿着"

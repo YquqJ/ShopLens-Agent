@@ -17,10 +17,10 @@ from app.services import catalog
 
 _TOP_K = 5
 
-# 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型
-_CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit")
+# 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型/性别/尺码
+_CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit", "gender", "size")
 # 语义召回文本的字段顺序（回退拼接用，保持「颜色/风格/材质/品类」的旧观感）
-_SEMANTIC_ORDER = ("color", "style", "material", "category", "scene", "fit")
+_SEMANTIC_ORDER = ("gender", "size", "color", "style", "material", "category", "scene", "fit")
 
 
 def _build_filters(prefs: dict) -> dict:
@@ -34,6 +34,8 @@ def _build_filters(prefs: dict) -> dict:
         ("color", "preferred_colors"),
         ("style", "preferred_styles"),
         ("material", "preferred_materials"),
+        ("gender", "preferred_genders"),
+        ("size", "preferred_sizes"),
     ):
         if key not in filters and prefs.get(preferred):
             filters[key] = prefs[preferred]
@@ -116,6 +118,8 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
             "title": it.get("title"),
             "category": it.get("category"),
             "attributes": attributes,
+            "image_url": it.get("picture") or "",
+            "url": it.get("url") or "",
             "quotes": [quote],
             "best": quote,
             "final_price": price,
@@ -156,7 +160,8 @@ async def retrieve_node(state: AgentState, config: RunnableConfig | None = None)
                 "attributes": n["attributes"],
                 "price": n["final_price"],
                 "stock": 1,
-                "image_url": "",
+                "image_url": n.get("image_url", ""),
+                "url": n.get("url", ""),
                 "score": 1.0,
             }
             for n in normalized

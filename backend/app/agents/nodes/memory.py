@@ -14,18 +14,26 @@ _FIELD_TERMS = {
     # 通勤同时是商品场景，V1 不将它解析成跨会话风格偏好。
     "preferred_styles": ("简约", "街头", "运动", "复古"),
     "preferred_materials": ("纯棉", "亚麻", "牛仔", "抓绒", "羊毛", "棉服", "真皮", "帆布", "网面"),
+    "preferred_genders": ("男款", "女款"),
+    "preferred_sizes": ("S码", "M码", "L码", "XL码", "36码", "37码", "38码", "39码", "40码", "41码", "42码", "43码"),
 }
 _FIELD_LABELS = {
     "preferred_colors": ("颜色",),
     "preferred_styles": ("风格",),
     "preferred_materials": ("材质",),
+    "preferred_genders": ("性别", "男款", "女款"),
+    "preferred_sizes": ("尺码", "码数"),
     "avoid_preferences": ("避雷", "不喜欢"),
+}
+_SIZE_CANONICAL = {
+    "S码": "S", "M码": "M", "L码": "L", "XL码": "XL",
+    **{f"{size}码": size for size in range(36, 44)},
 }
 
 
 def _matched_terms(text: str) -> dict[str, list[str]]:
     return {
-        key: [term for term in terms if term in text]
+        key: [_SIZE_CANONICAL.get(term, term) for term in terms if term in text]
         for key, terms in _FIELD_TERMS.items()
         if any(term in text for term in terms)
     }

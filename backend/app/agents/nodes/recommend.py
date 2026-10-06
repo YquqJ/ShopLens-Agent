@@ -1,7 +1,7 @@
 """推荐节点：LLM 基于归一结果生成可溯源推荐。
 
 设计决策：
-- 数值（sku_id/title/final_price/platform/attributes）一律从数据（normalized）取，
+- 数值和媒体字段（sku_id/title/final_price/platform/attributes/image_url/url）一律从数据（normalized）取，
   只让 LLM 生成本文「理由/总结」，杜绝价格被 LLM 现编；
 - 有预算时先做非 LLM 过滤（best 到手价 ≤ 预算），选不出再退回全部，保证 ≥1 条；
 - M7 结构化裁剪：喂给 LLM 的上下文从「字典 repr 全文」改为紧凑 key=value 摘要
@@ -53,7 +53,8 @@ def _fmt_prefs(prefs: dict) -> str:
     """偏好字典 → 紧凑「键=值」，跳过空字段（裁剪用）。"""
     mapping = [("category", "品类"), ("budget", "预算"), ("color", "颜色"),
                ("style", "风格"), ("material", "材质"), ("scene", "场景"),
-               ("fit", "版型"), ("requirements", "要求")]
+               ("fit", "版型"), ("gender", "性别"), ("size", "尺码"),
+               ("requirements", "要求")]
     parts = [f"{cn}={prefs[k]}" for k, cn in mapping if prefs.get(k) not in (None, "", [])]
     defaults = [
         ("preferred_colors", "长期颜色", "color"),
@@ -130,6 +131,8 @@ async def recommend_node(state: AgentState) -> dict:
             "final_price": b["final_price"],       # 数值取数据
             "platform": b["platform"],             # 数值取数据
             "attributes": item["attributes"],      # 数值取数据
+            "image_url": item.get("image_url", ""),
+            "url": item.get("url", ""),
             "reason": r.reason,                     # 文本取 LLM（挂属性，可溯源）
         })
     return {"recommendation": {"summary": res.summary, "items": items, "degraded_sources": state.get("degraded_sources", [])}}

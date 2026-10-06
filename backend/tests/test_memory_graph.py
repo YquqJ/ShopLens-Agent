@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from app.agents.graph import build_graph
-from app.agents.nodes import memory, route
+from app.agents.nodes import clarify, memory, route
 from app.agents.nodes.memory import build_effective_preferences, parse_memory_command
 from app.api.chat import ChatRequest, ResumeRequest, _make_cfg, source_modes
 
@@ -17,6 +17,13 @@ def test_parse_memory_command_saves_only_explicit_durable_catalog_preferences() 
         "preferred_colors": ["黑色"],
         "preferred_styles": ["简约"],
         "preferred_materials": ["纯棉"],
+    }
+
+
+def test_parse_memory_command_supports_gender_and_size_preferences() -> None:
+    assert parse_memory_command("请记住我以后优先男款，尺码穿L码") == {
+        "preferred_genders": ["男款"],
+        "preferred_sizes": ["L"],
     }
 
 
@@ -80,6 +87,43 @@ def test_effective_preferences_ignore_retired_platform_memory() -> None:
         "preferred_colors": ["黑色", "深蓝"],
         "preferred_styles": ["简约"],
     }
+
+
+def test_effective_preferences_include_gender_and_size_memory() -> None:
+    loaded = {"preferred_genders": ["女款"], "preferred_sizes": ["M"]}
+    assert build_effective_preferences({"category": "衬衫"}, loaded) == {
+        "category": "衬衫",
+        "preferred_genders": ["女款"],
+        "preferred_sizes": ["M"],
+    }
+
+
+def test_clarify_requires_gender_but_accepts_saved_gender_preference() -> None:
+    assert clarify._missing({"category": "衬衫", "budget": 300}) == ["男款还是女款"]
+    assert clarify._missing({
+        "category": "衬衫", "budget": 300, "preferred_genders": ["女款"],
+    }) == []
+
+
+@pytest.mark.anyio
+async def test_clarify_node_can_merge_profile_preferences(monkeypatch) -> None:
+    class _Structured:
+        async def ainvoke(self, _messages):
+            return clarify.ClarifyResult(
+                needs_clarification=True,
+                preferences=clarify.Preferences(category="卫衣", requirements="显瘦透气"),
+                clarify_question="预算和性别？",
+            )
+
+    monkeypatch.setattr(clarify, "get_structured_llm", lambda *_args: _Structured())
+    result = await clarify.clarify_node({
+        "messages": [HumanMessage("我要买一件显瘦透气的卫衣")],
+        "preferences": {},
+        "profile_preferences": {},
+        "hop_count": 0,
+    })
+    assert result["needs_action"] == "clarify"
+    assert result["clarify_question"] == "预算和性别？"
 
 
 def test_profile_key_uses_browser_profile_then_thread_fallback() -> None:
