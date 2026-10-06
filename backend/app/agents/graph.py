@@ -33,6 +33,8 @@ def _after_route(state: AgentState) -> str:
         return "shopping"
     if intent == "memory":
         return "memory"
+    if intent == "cancel":
+        return "cancel"
     return "end"
 
 
@@ -78,7 +80,7 @@ def build_graph(checkpointer=None):
     g.add_edge("load_memory", "route")
     g.add_conditional_edges(
         "route", _after_route,
-        {"shopping": "clarify", "memory": "capture_memory", "end": END},
+        {"shopping": "clarify", "memory": "capture_memory", "cancel": END, "end": END},
     )
     g.add_edge("clarify", "capture_memory")
     g.add_conditional_edges("capture_memory", _after_capture, {"retrieve": "retrieve", "end": END})

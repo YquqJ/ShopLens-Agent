@@ -114,6 +114,6 @@ async def test_cancel_product_persists_agent_message_without_resetting_context(m
 
     assert result == {"cancelled": True}
     _config, update = graph.updated
-    assert update["messages"][0].content == "未选择推荐商品"
+    assert update["messages"][0].content == "好的，已取消本次商品选择。你可以继续说明购物需求，也可以说“退出导购”结束本轮。"
     assert update["recommendation"] == {}
     assert "session_reset_pending" not in update

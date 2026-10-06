@@ -168,9 +168,9 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
           cur.agentReply = q
         }
         cur.contextReset = true
-      } else if (q === '未选择推荐商品' || q.startsWith('已下单「') || q === '未下单') {
+      } else if (q === '未选择推荐商品' || q === REAL_CANCEL_REPLY || q === MOCK_CANCEL_REPLY || q.startsWith('已下单「') || q === '未下单') {
         cur.agentReply = q
-        cur.contextReset = q !== '未选择推荐商品'
+        cur.contextReset = q === MOCK_CANCEL_REPLY || q.startsWith('已下单「') || q === '未下单'
       } else cur.agentReply = q
     }
   }
@@ -216,6 +216,8 @@ function fmtYuan(v: number | null | undefined): string {
 
 // 平台展示名（与后端 place_order 回写 messages 的摘要文案保持一致）
 const PLATFORM_NAME: Record<string, string> = { jd: '京东', taobao: '淘宝', pdd: '拼多多', master: '主库兜底' }
+const REAL_CANCEL_REPLY = '好的，已取消本次商品选择。你可以继续说明购物需求，也可以说“退出导购”结束本轮。'
+const MOCK_CANCEL_REPLY = '好的，已取消本次下单。你可以继续说明购物需求，也可以说“退出导购”结束本轮。'
 
 // 下单完成摘要文本：候选卡用「已下单 xx · ¥xx · 平台」替位
 function orderSummary(turn: Turn): string {
@@ -394,7 +396,7 @@ export const useChatStore = defineStore('chat', {
         turn.error = e instanceof Error ? e.message : String(e)
         return false
       }
-      turn.agentReply = '未选择推荐商品'
+      turn.agentReply = REAL_CANCEL_REPLY
       turn.agentReplyUrl = ''
       turn.recommendation = null
       turn.normalized = []
@@ -502,7 +504,7 @@ export const useChatStore = defineStore('chat', {
         turn.draftOrder = null
         turn.contextReset = true
       } else if (turn.order?.status === 'cancelled') {
-        turn.agentReply = '用户取消下单'
+        turn.agentReply = MOCK_CANCEL_REPLY
         turn.recommendation = null
         turn.draftOrder = null
         turn.contextReset = true

@@ -27,6 +27,8 @@ from app.services.order import ensure_conversation, require_conversation_owner
 
 router = APIRouter()
 
+_CANCEL_PRODUCT_REPLY = "好的，已取消本次商品选择。你可以继续说明购物需求，也可以说“退出导购”结束本轮。"
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -252,7 +254,7 @@ async def cancel_product(req: CancelProductRequest, request: Request) -> dict:
     graph = request.app.state.graph
     cfg = {"configurable": {"thread_id": req.thread_id}}
     await graph.aupdate_state(cfg, {
-        "messages": [AIMessage("未选择推荐商品", additional_kwargs={"ts": time.time()})],
+        "messages": [AIMessage(_CANCEL_PRODUCT_REPLY, additional_kwargs={"ts": time.time()})],
         "recommendation": {},
         "normalized": [],
         "candidates": [],

@@ -70,6 +70,38 @@ def test_parse_memory_command_treats_commute_as_session_scene_not_durable_style(
     assert parse_memory_command("请更新我的风格偏好为通勤") == {}
 
 
+@pytest.mark.parametrize("text", ["我不买了", "我不要了", "先不买了", "退出本轮导购"])
+def test_cancel_intent_requires_explicit_exit_phrase(text: str) -> None:
+    assert route._is_cancel_command(text) is True
+
+
+@pytest.mark.parametrize("text", ["请推荐一件黑色外套", "我不要白色，换黑色", "不买了，推荐别的", "我想买一双鞋"])
+def test_cancel_intent_does_not_conflict_with_shopping_language(text: str) -> None:
+    assert route._is_cancel_command(text) is False
+
+
+def test_cancel_fast_path_clears_short_term_preferences() -> None:
+    state = {"messages": [HumanMessage("我不买了")], "preferences": {"category": "外套", "budget": 500}}
+    assert route._fast_path(state) == "cancel"
+
+
+@pytest.mark.anyio
+async def test_ambiguous_cancel_phrase_falls_back_to_light_model(monkeypatch) -> None:
+    class _Structured:
+        async def ainvoke(self, _messages):
+            return route.RouteResult(intent="cancel")
+
+    monkeypatch.setattr(route, "get_structured_llm", lambda *_args: _Structured())
+    result = await route.route_node({
+        "messages": [HumanMessage("算了，暂时不需要了")],
+        "preferences": {"category": "外套", "budget": 500},
+    })
+
+    assert result["intent"] == "cancel"
+    assert result["reply"] == "好的，本轮导购已结束。之后有新的购物需求时，直接告诉我即可。"
+    assert result["preferences"] == {"__reset_session_preferences__": True}
+
+
 def test_effective_preferences_ignore_retired_platform_memory() -> None:
     loaded = {
         "preferred_colors": ["黑色", "深蓝"],
