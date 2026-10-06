@@ -1,5 +1,12 @@
 // SSE 事件负载类型 —— 对应 backend/app/api/chat.py 的 _sse 分帧 与 各节点返回结构
 
+export type SourceMode = 'mock' | 'real'
+
+export interface SourceModes {
+  mock: boolean
+  real: boolean
+}
+
 export interface Preferences {
   category: string | null
   budget: number | null

@@ -8,6 +8,7 @@ const store = useChatStore()
 const turn = computed(() => store.activeSession.turns.at(-1))
 const streaming = computed(() => turn.value?.streaming === true)
 const shortThread = computed(() => store.activeSession.id.replace(/-/g, '').slice(0, 8))
+const sourceModeLabel = computed(() => store.sourceMode === 'real' ? '值得买真实源' : '本地仿真源')
 
 const SOURCES = [
   { key: 'jd', label: '京东' },
@@ -96,9 +97,13 @@ onUnmounted(() => {
     </div>
 
     <div class="trace-footer">
+      <span>数据源 <b>{{ sourceModeLabel }}</b></span>
       <span>模型 <b>qwen-plus</b></span>
-      <span v-if="turn?.degradedSources.length">已降级源 <b>{{ turn.degradedSources.join(' / ') }}</b></span>
-      <span v-else>MCP 比价源 <b>3</b> · 优惠券/物流源 <b>2</b></span>
+      <span v-if="store.sourceMode === 'real'">实时商品检索 · <b>推荐模式</b></span>
+      <template v-else>
+        <span v-if="turn?.degradedSources.length">已降级源 <b>{{ turn.degradedSources.join(' / ') }}</b></span>
+        <span v-else>MCP 比价源 <b>3</b> · 优惠券/物流源 <b>2</b></span>
+      </template>
     </div>
 
     <div class="debug-panel">

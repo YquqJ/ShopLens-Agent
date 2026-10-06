@@ -1,4 +1,4 @@
-"""把 5 个 MCP server 经 langchain-mcp-adapters 加载为 LangChain 工具。
+"""把 6 个 MCP server 经 langchain-mcp-adapters 加载为 LangChain 工具。
 
 设计决策：
 - 每个 server 走 stdio 子进程（独立进程，天然隔离，为 M6 单源熔断打底）；
@@ -24,6 +24,7 @@ SERVERS = {
     "price_pdd": "app.mcp.pdd",
     "coupon": "app.mcp.coupon",
     "logistics": "app.mcp.logistics",
+    "zhidemai": "app.mcp.zhidemai",
 }
 
 

@@ -1,16 +1,19 @@
 """检索节点：按偏好召回候选商品。
 
-两条路径（由 SHOPLENS_ZHIDEMAI_ENABLED 开关选）：
+两条路径（由请求级 source_mode 选择）：
 - 默认：Chroma 向量检索（店铺种子目录）；
-- 值海纳模式：直连海纳开放平台召回真实商品（方案 B），
+- 值海纳模式：通过 zhidemai MCP 工具召回真实商品（方案 B），
   直接把真实报价构造为 normalized 结构，供 recommend 直接消费——
   跳过 compare/normalize（真实源无跨平台 sku 对齐，且不可喂仿真比价源，否则价格现编）。
 """
+import json
+
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.state import AgentState
 from app.agents.nodes.memory import build_effective_preferences
 from app.core.config import settings
 from app.services import catalog
-from app.services import zhidemai as zhidemai_service
 
 _TOP_K = 5
 
@@ -51,6 +54,29 @@ def _zhidemai_enabled() -> bool:
     从 settings 读（.env 经 pydantic-settings 只进 settings，不进 os.environ）。
     """
     return bool(settings.SHOPLENS_ZHIDEMAI_ENABLED) and bool(settings.ZDM_API_KEY)
+
+
+def _source_mode(config: RunnableConfig | None) -> str:
+    """请求显式指定模式时优先使用；旧调用未传时兼容环境变量开关。"""
+    configurable = (config or {}).get("configurable", {})
+    mode = configurable.get("source_mode")
+    if mode in {"mock", "real"}:
+        return mode
+    return "real" if _zhidemai_enabled() else "mock"
+
+
+def _unwrap_mcp_result(result):
+    """兼容 LangChain MCP 返回的 text content、JSON 字符串和已解析对象。"""
+    if (
+        isinstance(result, list)
+        and result
+        and isinstance(result[0], dict)
+        and isinstance(result[0].get("text"), str)
+    ):
+        return json.loads(result[0]["text"])
+    if isinstance(result, str):
+        return json.loads(result)
+    return result
 
 
 def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
@@ -97,17 +123,29 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
     return normalized
 
 
-async def retrieve_node(state: AgentState) -> dict:
+async def retrieve_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     prefs = build_effective_preferences(
         state.get("preferences") or {}, state.get("profile_preferences") or {},
     )
 
-    if _zhidemai_enabled():
+    if _source_mode(config) == "real":
         # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话
         query = _build_semantic_query(prefs) or (
             state["messages"][-1].content if state.get("messages") else ""
         )
-        items = await zhidemai_service.search_real_products(query, size=_TOP_K)
+        tools = (config or {}).get("configurable", {}).get("mcp_tools", {})
+        search_tool = tools.get("zhidemai_search_real_products")
+        if search_tool is None:
+            raise RuntimeError("真实数据源未加载：缺少 zhidemai_search_real_products MCP 工具")
+        payload: dict = {"product_query": query, "size": _TOP_K}
+        if prefs.get("category"):
+            payload["category_name"] = prefs["category"]
+        if prefs.get("budget") not in (None, ""):
+            payload["max_price"] = int(float(prefs["budget"]))
+        result = _unwrap_mcp_result(await search_tool.ainvoke(payload))
+        items = result.get("items", []) if isinstance(result, dict) else result
+        if not isinstance(items, list):
+            raise RuntimeError("值得买 MCP 返回了无法解析的商品列表")
         normalized = _zhidemai_to_normalized(items)
         # candidates 仅作 trace 计数与结构复用（sku_id 为 ZDM 合成 id）
         candidates = [

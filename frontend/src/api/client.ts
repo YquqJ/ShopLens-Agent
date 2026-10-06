@@ -5,6 +5,8 @@ import type {
   FunnelStats,
   ProfilePreferences,
   SSEEvent,
+  SourceMode,
+  SourceModes,
 } from './types'
 
 const PROFILE_ID_STORAGE_KEY = 'shoplens.profile_id'
@@ -82,8 +84,14 @@ export function chatStream(
   threadId: string,
   message: string,
   onEvent: (ev: SSEEvent) => void,
+  sourceMode: SourceMode = 'mock',
 ): Promise<void> {
-  return postSSE('/api/chat', { message, thread_id: threadId, profile_id: getProfileId() }, onEvent)
+  return postSSE('/api/chat', {
+    message,
+    thread_id: threadId,
+    profile_id: getProfileId(),
+    source_mode: sourceMode,
+  }, onEvent)
 }
 
 export function resumeStream(
@@ -152,6 +160,12 @@ export async function fetchProfilePreferences(): Promise<ProfilePreferences> {
   if (!resp.ok) throw new Error(`偏好记忆加载失败：${resp.status}`)
   const data = (await resp.json()) as { profile_preferences?: ProfilePreferences }
   return data.profile_preferences ?? {}
+}
+
+export async function fetchSourceModes(): Promise<SourceModes> {
+  const resp = await fetch('/api/source-modes')
+  if (!resp.ok) throw new Error(`数据源模式加载失败：${resp.status}`)
+  return (await resp.json()) as SourceModes
 }
 
 // 熔断演示：注入/清除某个 mock 源的故障（rate 0 清除，1 表示 100% 失败）

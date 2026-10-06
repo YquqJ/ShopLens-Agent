@@ -6,7 +6,7 @@
 - graph / mcp_tools 由 main.py lifespan 注入到 app.state，随进程共享长会话。
 """
 import json
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -19,6 +19,7 @@ from app.infra.langfuse import (
     langfuse_request_context,
     with_langfuse_config,
 )
+from app.core.config import settings
 from app.services.order import ensure_conversation, require_conversation_owner
 
 router = APIRouter()
@@ -28,6 +29,7 @@ class ChatRequest(BaseModel):
     message: str
     thread_id: str
     profile_id: str
+    source_mode: Literal["mock", "real"] = "mock"
 
 
 class ResumeRequest(BaseModel):
@@ -42,13 +44,20 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _make_cfg(request: Request, thread_id: str, profile_id: str | None = None) -> dict:
+def _make_cfg(
+    request: Request,
+    thread_id: str,
+    profile_id: str | None = None,
+    source_mode: Literal["mock", "real"] | None = None,
+) -> dict:
     configurable = {
         "thread_id": thread_id,
         "mcp_tools": request.app.state.mcp_tools,
     }
     if profile_id:
         configurable["profile_id"] = profile_id
+    if source_mode:
+        configurable["source_mode"] = source_mode
     return {
         "configurable": configurable
     }
@@ -113,10 +122,10 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
     langfuse = getattr(request.app.state, "langfuse", None)
     handler = create_callback_handler(langfuse)
     cfg = with_langfuse_config(
-        _make_cfg(request, req.thread_id, req.profile_id),
+        _make_cfg(request, req.thread_id, req.profile_id, req.source_mode),
         handler,
         run_name="shoplens.chat",
-        metadata={"operation": "chat", "thread_id": req.thread_id},
+        metadata={"operation": "chat", "thread_id": req.thread_id, "source_mode": req.source_mode},
         tags=["chat"],
     )
 
@@ -177,3 +186,9 @@ async def resume(req: ResumeRequest, request: Request) -> StreamingResponse:
             yield _sse("error", {"message": str(e)})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@router.get("/source-modes")
+async def source_modes() -> dict[str, bool]:
+    """返回前端可用的数据源模式，不暴露真实源密钥。"""
+    return {"mock": True, "real": bool(settings.ZDM_API_KEY)}

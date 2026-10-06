@@ -10,6 +10,7 @@ import {
   fetchConversation,
   fetchConversations,
   fetchProfilePreferences,
+  fetchSourceModes,
   recordEvent,
   resumeStream,
 } from '../api/client'
@@ -23,6 +24,8 @@ import type {
   ProfilePreferences,
   Recommendation,
   SSEEvent,
+  SourceMode,
+  SourceModes,
 } from '../api/types'
 
 export interface TraceNode {
@@ -199,6 +202,8 @@ export const useChatStore = defineStore('chat', {
       loadedIds: [] as string[],
       profilePreferences: {} as ProfilePreferences,
       memoryEvents: [] as MemoryEvent[],
+      sourceMode: 'mock' as SourceMode,
+      sourceModes: { mock: true, real: false } as SourceModes,
     }
   },
   getters: {
@@ -220,6 +225,7 @@ export const useChatStore = defineStore('chat', {
     },
     // 启动时从后端拉会话列表，回填左侧 rail 并加载最近一条
     async hydrate(): Promise<void> {
+      await this.refreshSourceModes()
       try {
         await this.refreshProfilePreferences()
       } catch (e) {
@@ -263,6 +269,19 @@ export const useChatStore = defineStore('chat', {
         console.error('偏好记忆加载失败', e)
       }
     },
+    async refreshSourceModes(): Promise<void> {
+      try {
+        const modes = await fetchSourceModes()
+        this.sourceModes = modes
+        if (!modes[this.sourceMode]) this.sourceMode = 'mock'
+      } catch (e) {
+        console.error('数据源模式加载失败', e)
+      }
+    },
+    setSourceMode(mode: SourceMode): void {
+      if (!this.sourceModes[mode]) return
+      this.sourceMode = mode
+    },
     // 删除会话：后端删行 + 本地移除；删的是当前会话则切到最近一条或新建空会话
     async deleteSession(id: string): Promise<void> {
       await deleteConversation(id)
@@ -283,7 +302,12 @@ export const useChatStore = defineStore('chat', {
       const turn = newTurn(text)
       session.turns.push(turn)
       if (session.turns.length === 1) session.title = text.slice(0, 18)
-      await this.run(turn, () => chatStream(session.id, text, (ev) => this.handleEvent(session, turn, ev)))
+      await this.run(turn, () => chatStream(
+        session.id,
+        text,
+        (ev) => this.handleEvent(session, turn, ev),
+        this.sourceMode,
+      ))
     },
     async resumeHitl(turnId: string, confirm: boolean, skuId?: string, platform?: string): Promise<void> {
       const session = this.activeSession

@@ -164,6 +164,12 @@ textarea { font-family: inherit; }
 .composer textarea::placeholder { color: var(--muted-fg); }
 .send-btn { height: 46px; padding: 0 22px; background: var(--gold); color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 600; transition: all var(--t); }
 .send-btn:hover { background: var(--gold-bright); }
+.source-mode { height: 46px; display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--ivory); flex-shrink: 0; }
+.source-mode-label { padding: 0 6px; color: var(--muted-fg); font-size: 11px; white-space: nowrap; }
+.source-mode-btn { height: 36px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted-fg); font-size: 12px; cursor: pointer; transition: all var(--t); white-space: nowrap; }
+.source-mode-btn:hover:not(:disabled) { color: var(--ink); background: var(--muted-bg); }
+.source-mode-btn.active { background: var(--stone-900); color: var(--gold-bright); }
+.source-mode-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Trace drawer */
 .trace { background: var(--stone-900); color: #E7E5E4; overflow-y: auto; border-left: 1px solid #292524; padding: 22px 20px; }
@@ -221,7 +227,7 @@ textarea { font-family: inherit; }
 .empty-hint { color: var(--muted-fg); text-align: center; padding: 60px 20px; font-size: 14px; }
 
 @media (max-width: 1080px) { .body { grid-template-columns: 240px 1fr; } .trace { display: none; } .body.drawer-closed { grid-template-columns: 240px 1fr; } }
-@media (max-width: 860px) { .body { grid-template-columns: 1fr; } .rail { display: none; } .kpi-grid { grid-template-columns: repeat(2,1fr); } .msg .bubble { max-width: 94%; } }
+@media (max-width: 860px) { .body { grid-template-columns: 1fr; } .rail { display: none; } .kpi-grid { grid-template-columns: repeat(2,1fr); } .msg .bubble { max-width: 94%; } .composer-inner { max-width: 94%; gap: 6px; } .source-mode-label { display: none; } .source-mode-btn { padding: 0 8px; } }
 
 /* 转化看板：隐藏左右两侧栏，仅留居中主列（覆盖上面 media query 里的 .body.drawer-closed，故放最后） */
 .body.dash-active { grid-template-columns: 1fr; }
