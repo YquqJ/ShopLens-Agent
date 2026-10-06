@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
 
-from app.api.chat import SelectProductRequest, select_product
+from app.api.chat import SelectProductRequest, build_chat_payload, select_product
 
 
 class _Graph:
@@ -51,6 +51,27 @@ async def test_select_product_persists_agent_message_and_clears_recommendation(m
     assert isinstance(update["messages"][0], AIMessage)
     assert update["messages"][0].content == "已选择「真实外套」\n链接：https://mall.example/item"
     assert update["recommendation"] == {}
+    assert update["session_reset_pending"] is True
+
+
+class _ResetGraph:
+    async def aget_state(self, _config):
+        return SimpleNamespace(values={
+            "preferences": {"category": "外套", "budget": 300, "gender": "女款"},
+            "session_reset_pending": True,
+            "order": None,
+        })
+
+
+@pytest.mark.anyio
+async def test_next_chat_after_real_selection_resets_short_term_preferences():
+    payload = await build_chat_payload(
+        _ResetGraph(),
+        {"configurable": {"thread_id": "thread-1"}},
+        "我想买一双鞋",
+    )
+
+    assert payload["preferences"] == {"__reset_session_preferences__": True}
 
 
 @pytest.mark.anyio

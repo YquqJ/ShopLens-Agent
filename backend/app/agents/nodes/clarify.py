@@ -26,7 +26,6 @@ class Preferences(BaseModel):
     scene: str | None = Field(None, description="穿着场景，如 通勤/周末/旅行（无则留空）")
     fit: str | None = Field(None, description="版型偏好，如 修身/宽松/直筒/落肩（无则留空）")
     gender: str | None = Field(None, description="性别偏好，如 男款/女款（无则留空）")
-    size: str | None = Field(None, description="尺码偏好，如 S/M/L/XL 或 40（无则留空）")
     requirements: str | None = Field(None, description="无法归入闭集字段的功能/描述需求，如 显瘦一点、透气（无则留空）")
 
 
@@ -37,8 +36,8 @@ class ClarifyResult(BaseModel):
 
 
 _SYSTEM = (
-    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景/版型/性别/尺码），拿不准的字段留空。"
-    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋；版型可填 修身/宽松/直筒/落肩，性别可填男款/女款，尺码按服饰或鞋码填写。"
+    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景/版型/性别），拿不准的字段留空。"
+    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋；版型可填 修身/宽松/直筒/落肩，性别可填男款/女款。"
     "无法归入这些闭集字段的功能/描述语（如 显瘦一点、透气）填到 requirements。"
     "关键信息=品类+预算+性别，缺任一即 needs_clarification=True。性别只允许男款或女款。"
 )

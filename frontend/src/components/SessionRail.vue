@@ -11,7 +11,6 @@ const prefTags = computed(() => {
   if (prefs.preferred_styles?.length) tags.push(`风格：${prefs.preferred_styles.join('、')}`)
   if (prefs.preferred_materials?.length) tags.push(`材质：${prefs.preferred_materials.join('、')}`)
   if (prefs.preferred_genders?.length) tags.push(`性别：${prefs.preferred_genders.join('、')}`)
-  if (prefs.preferred_sizes?.length) tags.push(`尺码：${prefs.preferred_sizes.join('、')}`)
   if (prefs.avoid_preferences?.length) tags.push(`避雷：${prefs.avoid_preferences.join('、')}`)
   return tags
 })

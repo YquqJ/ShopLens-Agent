@@ -57,12 +57,12 @@ def test_normalize_updates_keeps_durable_values_and_shared_provenance() -> None:
     }
 
 
-def test_normalize_updates_keeps_gender_and_size_preferences() -> None:
+def test_normalize_updates_keeps_gender_and_ignores_size_preferences() -> None:
     values, forgotten, _ = normalize_updates({
         "preferred_genders": ["男款"],
-        "preferred_sizes": ["L"],
+        "legacy_size": ["L"],
     })
-    assert values == {"preferred_genders": ["男款"], "preferred_sizes": ["L"]}
+    assert values == {"preferred_genders": ["男款"]}
     assert forgotten == set()
 
 

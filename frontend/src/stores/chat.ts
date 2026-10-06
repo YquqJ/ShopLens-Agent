@@ -70,7 +70,7 @@ export interface Session {
 const NODE_META: Record<string, { label: string; desc: string }> = {
   clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
   route: { label: '意图路由', desc: '判断导购 vs 其他' },
-  retrieve: { label: '商品检索', desc: 'Chroma 向量召回候选 SKU' },
+  retrieve: { label: '商品检索', desc: '按当前数据源召回候选商品' },
   compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
   normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
@@ -86,7 +86,6 @@ const MEMORY_KEY_LABELS: Record<string, string> = {
   preferred_styles: '风格',
   preferred_materials: '材质',
   preferred_genders: '性别',
-  preferred_sizes: '尺码',
   avoid_preferences: '避雷项',
 }
 
@@ -407,7 +406,11 @@ export const useChatStore = defineStore('chat', {
         }
         case 'retrieve': {
           const candidates = (data.candidates as unknown[]) ?? []
-          pushTrace(turn, 'retrieve', 'done', ` · 召回 ${candidates.length} SKU`)
+          const isRealSource = Boolean(data.zdm_mode)
+          const detail = isRealSource
+            ? ` · MCP 真实源召回 ${candidates.length} 条商品`
+            : ` · Chroma 向量召回 ${candidates.length} 个 SKU`
+          pushTrace(turn, 'retrieve', 'done', detail)
           break
         }
         case 'compare': {

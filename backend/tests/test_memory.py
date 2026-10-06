@@ -32,7 +32,8 @@ def test_seed_catalog_contains_only_apparel_with_reusable_attributes() -> None:
     assert len(products) == 24
     assert {product["category"] for product in products} <= apparel_categories
     assert all(
-        {"颜色", "风格", "材质", "场景", "性别", "尺码"} <= set(product["attributes"])
+        {"颜色", "风格", "材质", "场景", "性别"} <= set(product["attributes"])
+        and "尺码" not in product["attributes"]
         for product in products
     )
 
@@ -63,9 +64,6 @@ def test_seed_catalog_varies_reusable_attributes_within_each_category() -> None:
         assert len({item["材质"] for item in attributes}) >= 2
         assert len({item["场景"] for item in attributes}) >= 2
         assert {item["性别"] for item in attributes} <= {"男款", "女款"}
-        assert len({item["尺码"] for item in attributes}) >= 2
-
-
 def test_merge_memory_combines_preferences_and_forgets_requested_key() -> None:
     profile = {
         "preferred_colors": ["黑色", "蓝色"],
@@ -133,8 +131,8 @@ def test_memory_tags_returns_readable_nonempty_preferences() -> None:
     ]
 
 
-def test_memory_tags_returns_gender_and_size_preferences() -> None:
+def test_memory_tags_returns_gender_preferences_without_size() -> None:
     assert memory_tags({
         "preferred_genders": ["男款"],
-        "preferred_sizes": ["L"],
-    }) == ["性别：男款", "尺码：L"]
+        "legacy_size": ["L"],
+    }) == ["性别：男款"]

@@ -17,10 +17,10 @@ from app.services import catalog
 
 _TOP_K = 5
 
-# 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型/性别/尺码
-_CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit", "gender", "size")
+# 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型/性别
+_CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit", "gender")
 # 语义召回文本的字段顺序（回退拼接用，保持「颜色/风格/材质/品类」的旧观感）
-_SEMANTIC_ORDER = ("gender", "size", "color", "style", "material", "category", "scene", "fit")
+_SEMANTIC_ORDER = ("gender", "color", "style", "material", "category", "scene", "fit")
 
 
 def _build_filters(prefs: dict) -> dict:
@@ -35,7 +35,6 @@ def _build_filters(prefs: dict) -> dict:
         ("style", "preferred_styles"),
         ("material", "preferred_materials"),
         ("gender", "preferred_genders"),
-        ("size", "preferred_sizes"),
     ):
         if key not in filters and prefs.get(preferred):
             filters[key] = prefs[preferred]

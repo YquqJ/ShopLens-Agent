@@ -20,10 +20,9 @@ def test_parse_memory_command_saves_only_explicit_durable_catalog_preferences() 
     }
 
 
-def test_parse_memory_command_supports_gender_and_size_preferences() -> None:
-    assert parse_memory_command("请记住我以后优先男款，尺码穿L码") == {
+def test_parse_memory_command_supports_gender_without_retired_fields() -> None:
+    assert parse_memory_command("请记住我以后优先男款") == {
         "preferred_genders": ["男款"],
-        "preferred_sizes": ["L"],
     }
 
 
@@ -89,12 +88,11 @@ def test_effective_preferences_ignore_retired_platform_memory() -> None:
     }
 
 
-def test_effective_preferences_include_gender_and_size_memory() -> None:
-    loaded = {"preferred_genders": ["女款"], "preferred_sizes": ["M"]}
+def test_effective_preferences_include_gender_without_size_memory() -> None:
+    loaded = {"preferred_genders": ["女款"], "legacy_size": ["M"]}
     assert build_effective_preferences({"category": "衬衫"}, loaded) == {
         "category": "衬衫",
         "preferred_genders": ["女款"],
-        "preferred_sizes": ["M"],
     }
 
 

@@ -37,6 +37,11 @@ def is_completed_order(state: dict) -> bool:
     return isinstance(order, dict) and order.get("status") == "placed"
 
 
+def should_reset_session(state: dict) -> bool:
+    """下一轮消息是否需要清空当前会话的临时导购条件。"""
+    return is_completed_order(state) or bool(state.get("session_reset_pending"))
+
+
 class AgentState(TypedDict):
     messages: Annotated[list[Any], operator.add]
     preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
@@ -57,6 +62,7 @@ class AgentState(TypedDict):
     lock_attempts: int   # 下单前二次询价「涨价」重确认次数
     price_raised: bool   # 最近一次二次询价是否涨价
     hop_count: int
+    session_reset_pending: bool  # 真实源选择完成后，下一轮清空临时偏好
 
 
 def initial_state(message: str, *, reset_preferences: bool = False) -> AgentState:
@@ -81,4 +87,5 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "lock_attempts": 0,
         "price_raised": False,
         "hop_count": 0,
+        "session_reset_pending": False,
     }

@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from app.agents.state import initial_state, is_completed_order
+from app.agents.state import initial_state, should_reset_session
 from app.infra.langfuse import (
     create_callback_handler,
     langfuse_request_context,
@@ -78,7 +78,7 @@ async def build_chat_payload(graph, cfg: dict, message: str) -> dict:
     """下单成功后的下一条用户消息必须开始新的临时导购上下文。"""
     snapshot = await graph.aget_state(cfg)
     previous_state = getattr(snapshot, "values", {}) or {}
-    return initial_state(message, reset_preferences=is_completed_order(previous_state))
+    return initial_state(message, reset_preferences=should_reset_session(previous_state))
 
 
 def _safe_node_update(node: str, update: dict) -> dict:
@@ -231,6 +231,7 @@ async def select_product(req: SelectProductRequest, request: Request) -> dict:
         "recommendation": {},
         "normalized": [],
         "candidates": [],
+        "session_reset_pending": True,
     })
     return {"selected": True}
 

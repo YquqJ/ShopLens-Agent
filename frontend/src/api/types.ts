@@ -14,7 +14,6 @@ export interface Preferences {
   material: string | null
   scene: string | null
   gender: string | null
-  size: string | null
 }
 
 export interface Candidate {
@@ -120,7 +119,6 @@ export interface ProfilePreferences {
   preferred_styles?: string[]
   preferred_materials?: string[]
   preferred_genders?: string[]
-  preferred_sizes?: string[]
   avoid_preferences?: string[]
 }
 

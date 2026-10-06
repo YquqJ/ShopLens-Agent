@@ -23,7 +23,7 @@ _SEED_COUNT = 200
 # 约束 ASCII key → 商品属性中文 key（build_seed_products 的 attributes 用中文键）
 _CN_KEYS = {
     "color": "颜色", "style": "风格", "material": "材质", "scene": "场景",
-    "fit": "版型", "gender": "性别", "size": "尺码",
+    "fit": "版型", "gender": "性别",
 }
 
 
