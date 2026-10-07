@@ -1,0 +1,74 @@
+{
+  "tasks": [
+    {
+      "id": "recommend_complete_request",
+      "type": "recommendation",
+      "message": "想买一件男款简约黑色衬衫，预算300元"
+    },
+    {
+      "id": "clarify_then_recommend",
+      "type": "clarification",
+      "messages": [
+        "想买一件男款简约衬衫",
+        "预算300元，黑色，适合通勤"
+      ]
+    },
+    {
+      "id": "cancel_after_confirmation",
+      "type": "cancel",
+      "message": "想买一件男款简约黑色衬衫，预算300元",
+      "resume": false
+    },
+    {
+      "id": "confirm_and_place_order",
+      "type": "order",
+      "message": "想买一件男款简约黑色衬衫，预算300元",
+      "resume": true
+    },
+    {
+      "id": "non_shopping_request",
+      "type": "other",
+      "message": "你好"
+    },
+    {
+      "id": "recommend_womens_sweatshirt",
+      "type": "recommendation",
+      "message": "推荐女款深蓝色运动卫衣，预算400元"
+    },
+    {
+      "id": "recommend_mens_cotton_tshirt",
+      "type": "recommendation",
+      "message": "想买男款纯棉黑色T恤，预算150元"
+    },
+    {
+      "id": "recommend_travel_jacket",
+      "type": "recommendation",
+      "message": "帮我找一件旅行穿的简约外套，预算800元，卡其色"
+    },
+    {
+      "id": "clarify_three_turn_request",
+      "type": "clarification",
+      "messages": [
+        "帮我挑一件衣服",
+        "男款衬衫",
+        "预算500，深蓝色，通勤穿"
+      ]
+    },
+    {
+      "id": "direct_cancel",
+      "type": "cancel",
+      "message": "这轮先不买了"
+    },
+    {
+      "id": "unrelated_question",
+      "type": "other",
+      "message": "你能帮我查一下天气吗"
+    },
+    {
+      "id": "confirm_and_place_order_sweatshirt",
+      "type": "order",
+      "message": "想买一件男款深蓝运动卫衣，预算400元",
+      "resume": true
+    }
+  ]
+}

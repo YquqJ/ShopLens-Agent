@@ -28,12 +28,18 @@ class CircuitBreaker:
         self._consecutive_failures = 0
         self._opened_at = 0.0
         self._probing = False  # HALF_OPEN 是否已有探测在途
+        self.transition_counts = {
+            "closed_to_open": 0,
+            "open_to_half_open": 0,
+            "half_open_to_closed": 0,
+            "half_open_to_open": 0,
+        }
 
     @property
     def state(self) -> CircuitState:
         # OPEN 且冷却结束 → 自动转入 HALF_OPEN（惰性，下次 allow() 时才算）
         if self._state == CircuitState.OPEN and self._cooled_down():
-            self._state = CircuitState.HALF_OPEN
+            self._transition(CircuitState.HALF_OPEN)
         return self._state
 
     @property
@@ -55,7 +61,8 @@ class CircuitBreaker:
     def record_success(self) -> None:
         self._probing = False
         self._consecutive_failures = 0
-        self._state = CircuitState.CLOSED
+        if self._state == CircuitState.HALF_OPEN:
+            self._transition(CircuitState.CLOSED)
 
     def record_failure(self) -> None:
         self._probing = False
@@ -64,8 +71,19 @@ class CircuitBreaker:
             self._open()
 
     def _open(self) -> None:
+        if self._state == CircuitState.CLOSED:
+            self.transition_counts["closed_to_open"] += 1
+        elif self._state == CircuitState.HALF_OPEN:
+            self.transition_counts["half_open_to_open"] += 1
         self._state = CircuitState.OPEN
         self._opened_at = time.monotonic()
+
+    def _transition(self, target: CircuitState) -> None:
+        if self._state == CircuitState.OPEN and target == CircuitState.HALF_OPEN:
+            self.transition_counts["open_to_half_open"] += 1
+        elif self._state == CircuitState.HALF_OPEN and target == CircuitState.CLOSED:
+            self.transition_counts["half_open_to_closed"] += 1
+        self._state = target
 
     def _cooled_down(self) -> bool:
         return time.monotonic() - self._opened_at >= self.cooldown_seconds

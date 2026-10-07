@@ -36,22 +36,43 @@ class ProtectedTool:
         self.name = getattr(inner, "name", None)
 
     async def ainvoke(self, *args, **kwargs):
+        self._registry.record_logical_call(self.source)
         breaker = self._registry.breaker(self.source)
         if not breaker.allow():
             self._registry.budget.on_skipped(self.source)
+            self._registry.record_circuit_skip(self.source)
             raise SourceError(self.source, "熔断打开，已降级跳过")
+        attempt_count = 0
+        backoff_seconds = 0.0
+
+        async def invoke_inner():
+            nonlocal attempt_count
+            attempt_count += 1
+            return await self._inner.ainvoke(*args, **kwargs)
+
+        def record_retry(_attempt: int, sleep_seconds: float) -> None:
+            nonlocal backoff_seconds
+            backoff_seconds += sleep_seconds
+
         async with trace_call(self._registry.tracer, self.source, f"mcp.{self.name}"):
             try:
                 result = await call_with_retry(
-                    lambda: self._inner.ainvoke(*args, **kwargs),
+                    invoke_inner,
+                    on_retry=record_retry,
                     **self._registry.retry_kwargs,
                 )
             except Exception as e:  # noqa: BLE001
                 breaker.record_failure()
                 self._registry.budget.on_failure(self.source)
+                self._registry.record_tool_result(
+                    self.source, attempts=attempt_count, backoff_seconds=backoff_seconds, succeeded=False,
+                )
                 raise SourceError(self.source, f"{type(e).__name__}: {e}") from e
         breaker.record_success()
         self._registry.budget.on_success(self.source)
+        self._registry.record_tool_result(
+            self.source, attempts=attempt_count, backoff_seconds=backoff_seconds, succeeded=True,
+        )
         return result
 
 
@@ -76,6 +97,7 @@ class SourceRegistry:
         self.budget = ErrorBudget(slo=slo)
         self.tracer = None  # 由 app 入口注入 OTel tracer，可选
         self._breakers: dict[str, CircuitBreaker] = {}
+        self._tool_metrics: dict[str, dict[str, float | int]] = {}
 
     def breaker(self, source: str) -> CircuitBreaker:
         if source not in self._breakers:
@@ -97,3 +119,47 @@ class SourceRegistry:
 
     def report(self) -> dict:
         return self.budget.report()
+
+    def record_logical_call(self, source: str) -> None:
+        self._metrics(source)["logical_calls"] += 1
+
+    def record_circuit_skip(self, source: str) -> None:
+        self._metrics(source)["circuit_open_skips"] += 1
+
+    def record_tool_result(
+        self, source: str, *, attempts: int, backoff_seconds: float, succeeded: bool,
+    ) -> None:
+        metrics = self._metrics(source)
+        metrics["attempts"] += attempts
+        metrics["retries"] += max(0, attempts - 1)
+        metrics["backoff_scheduled_seconds"] += backoff_seconds
+        if attempts > 1:
+            key = "recovered_calls" if succeeded else "retry_failed_calls"
+            metrics[key] += 1
+
+    def tool_metrics_report(self) -> dict:
+        sources = set(self._tool_metrics) | set(self._breakers)
+        report = {}
+        for source in sources:
+            metrics = dict(self._metrics(source))
+            retried_calls = metrics["recovered_calls"] + metrics["retry_failed_calls"]
+            metrics["retry_recovery_rate"] = (
+                metrics["recovered_calls"] / retried_calls if retried_calls else None
+            )
+            metrics["breaker_state"] = self.breaker(source).state.value
+            metrics["breaker_transitions"] = dict(self.breaker(source).transition_counts)
+            report[source] = metrics
+        return report
+
+    def _metrics(self, source: str) -> dict[str, float | int]:
+        if source not in self._tool_metrics:
+            self._tool_metrics[source] = {
+                "logical_calls": 0,
+                "attempts": 0,
+                "retries": 0,
+                "recovered_calls": 0,
+                "retry_failed_calls": 0,
+                "circuit_open_skips": 0,
+                "backoff_scheduled_seconds": 0.0,
+            }
+        return self._tool_metrics[source]

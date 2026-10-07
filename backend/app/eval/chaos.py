@@ -106,10 +106,22 @@ async def main() -> int:
             # 错误预算（存活源错误率应零新增）
             for src in PLATFORMS:
                 b = registry.report().get(src)
+                metrics = registry.tool_metrics_report().get(src)
                 if b:
                     print(
                         f"     {src}: 成功{b['success']} 失败{b['failure']} 熔断跳过{b['skipped']}"
                         f" 错误率{b['error_rate']} 预算剩余{b['error_budget_remaining']}"
+                    )
+                if metrics:
+                    recovery = metrics["retry_recovery_rate"]
+                    recovery_text = f"{recovery:.0%}" if recovery is not None else "N/A"
+                    transitions = metrics["breaker_transitions"]
+                    print(
+                        f"     保护指标: 逻辑调用{metrics['logical_calls']} 次/下游尝试{metrics['attempts']} 次"
+                        f" 重试{metrics['retries']} 次/重试恢复率{recovery_text}"
+                        f" 计划退避{metrics['backoff_scheduled_seconds']:.3f}s"
+                        f" 熔断跳过{metrics['circuit_open_skips']} 次/当前{metrics['breaker_state']}"
+                        f" 状态迁移{transitions}"
                     )
     return 0
 
