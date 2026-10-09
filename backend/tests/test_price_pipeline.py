@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from app.agents.nodes.compare import compare_node
@@ -14,6 +16,21 @@ class _RecordingTool:
     async def ainvoke(self, payload: dict) -> dict:
         self.calls.append(payload)
         return self.result
+
+
+class _DelayedTool:
+    def __init__(self, result: dict, tracker: dict[str, int]) -> None:
+        self.result = result
+        self.tracker = tracker
+
+    async def ainvoke(self, payload: dict) -> dict:
+        self.tracker["active"] += 1
+        self.tracker["max_active"] = max(self.tracker["max_active"], self.tracker["active"])
+        try:
+            await asyncio.sleep(0.01)
+            return self.result
+        finally:
+            self.tracker["active"] -= 1
 
 
 def test_platform_quote_is_derived_from_catalog_base_price(monkeypatch) -> None:
@@ -48,6 +65,33 @@ async def test_compare_passes_catalog_price_to_each_platform_quote() -> None:
         {"sku_id": "SKU0001", "platform": "taobao", "base_price": 200},
         {"sku_id": "SKU0001", "platform": "pdd", "base_price": 200},
     ]
+
+
+@pytest.mark.anyio
+async def test_compare_runs_independent_mcp_calls_with_a_bounded_concurrency() -> None:
+    tracker = {"active": 0, "max_active": 0}
+    price_tools = {
+        name: _DelayedTool({"price": 200, "platform": platform}, tracker)
+        for name, platform in {
+            "price_jd_get_quote": "jd",
+            "price_taobao_get_quote": "taobao",
+            "price_pdd_get_quote": "pdd",
+        }.items()
+    }
+    tools = {
+        **price_tools,
+        "coupon_get_coupons": _DelayedTool({"coupon": None}, tracker),
+        "logistics_get_delivery": _DelayedTool({"eta_days": 1, "shipping_fee": 0}, tracker),
+    }
+
+    result = await compare_node(
+        {"candidates": [{"sku_id": "SKU0001", "price": 200}]},
+        {"configurable": {"mcp_tools": tools, "compare_concurrency": 2}},
+    )
+
+    assert len(result["quotes"]) == 3
+    assert [quote["platform"] for quote in result["quotes"]] == ["jd", "taobao", "pdd"]
+    assert tracker["max_active"] == 2
 
 
 @pytest.mark.anyio

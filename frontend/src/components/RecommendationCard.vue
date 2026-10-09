@@ -185,7 +185,7 @@ async function cancel(): Promise<void> {
           {{ fmt(item.final_price) }}
           <span v-if="origPrice(item) != null" class="orig">{{ fmt(origPrice(item)) }}</span>
         </div>
-        <div class="why">{{ item.reason }}</div>
+        <div class="why">{{ item.reason || '正在生成推荐理由...' }}</div>
       </div>
     </div>
 

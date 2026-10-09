@@ -161,6 +161,12 @@ uv run python -m app.eval.clarify
 # MCP 单源故障、重试、熔断和降级
 uv run python -m app.eval.chaos
 
+# 多源比价串行/并发 A/B 基准
+uv run python -m app.eval.compare_concurrency
+
+# 推荐事实卡片 TTFT（输入到首卡 / 输入到完整推荐）
+uv run python -m app.eval.recommend_ttft
+
 # 真实 StateGraph 节点和端到端延迟
 uv run python -m app.eval.e2e_latency
 

@@ -1,7 +1,7 @@
 """SSE 流式聊天 + resume 端点。
 
 设计决策：
-- graph.astream(stream_mode="updates") 逐节点分帧，排除 messages（含不可序列化的 Message 对象）；
+- graph.astream(stream_mode=["updates", "custom"]) 逐节点分帧，并转发节点主动发送的预览事件；
 - 命中 interrupt 时发 interrupt 事件（草稿订单），客户端再调 /resume 恢复下单；
 - graph / mcp_tools 由 main.py lifespan 注入到 app.state，随进程共享长会话。
 """
@@ -115,7 +115,15 @@ async def _stream(
         user_id=configurable.get("profile_id"),
         metadata=trace_metadata,
     ):
-        async for event in graph.astream(payload, cfg, stream_mode="updates"):
+        async for mode, event in graph.astream(payload, cfg, stream_mode=["updates", "custom"]):
+            if mode == "custom":
+                if isinstance(event, dict) and event.get("event") == "recommendation_preview":
+                    yield _sse("recommendation_preview", {
+                        "recommendation": event.get("recommendation", {}),
+                    })
+                continue
+            if mode != "updates" or not isinstance(event, dict):
+                continue
             for node, update in event.items():
                 if node == "__interrupt__" or not isinstance(update, dict):
                     # 流末尾的 __interrupt__ 事件（值非 dict），交 aget_state 统一处理

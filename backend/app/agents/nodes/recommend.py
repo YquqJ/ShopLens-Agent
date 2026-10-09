@@ -8,6 +8,7 @@
   （build_user(compact=True)），不喂 normalize 前的原始报价原文。
 """
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.config import get_stream_writer
 from pydantic import BaseModel
 
 from app.agents.llm import MAIN_MODEL, get_structured_llm
@@ -91,6 +92,33 @@ def build_user(prefs: dict, top: list[dict], degraded: list[str], *, compact: bo
     return user
 
 
+def build_recommendation_preview(top: list[dict], degraded: list[str]) -> dict:
+    """在 LLM 生成理由前发送可验证的商品事实，缩短首张推荐卡片 TTFT。"""
+    return {
+        "summary": "",
+        "items": [{
+            "sku_id": item["sku_id"],
+            "title": item["title"],
+            "final_price": item["best"]["final_price"],
+            "platform": item["best"]["platform"],
+            "attributes": item["attributes"],
+            "image_url": item.get("image_url", ""),
+            "url": item.get("url", ""),
+            "reason": "",
+        } for item in top],
+        "degraded_sources": degraded,
+    }
+
+
+def _stream_preview(preview: dict) -> None:
+    """节点被单测直接调用时没有 LangGraph runtime，故无 writer 时静默跳过。"""
+    try:
+        writer = get_stream_writer()
+    except RuntimeError:
+        return
+    writer({"event": "recommendation_preview", "recommendation": preview})
+
+
 async def recommend_node(state: AgentState) -> dict:
     normalized = state.get("normalized", [])
     prefs = build_effective_preferences(
@@ -111,6 +139,7 @@ async def recommend_node(state: AgentState) -> dict:
                 "degraded_sources": state.get("degraded_sources", []),
             }
         }
+    _stream_preview(build_recommendation_preview(top, state.get("degraded_sources", [])))
     user = build_user(prefs, top, state.get("degraded_sources", []), compact=True)
 
     structured = get_structured_llm(MAIN_MODEL, RecommendResult)

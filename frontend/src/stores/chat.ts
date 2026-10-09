@@ -414,6 +414,8 @@ export const useChatStore = defineStore('chat', {
     handleEvent(session: Session, turn: Turn, ev: SSEEvent): void {
       if (ev.event === 'node') {
         this.handleNode(session, turn, ev.data)
+      } else if (ev.event === 'recommendation_preview') {
+        this.handleRecommendationPreview(session, turn, ev.data)
       } else if (ev.event === 'interrupt') {
         this.handleInterrupt(turn, ev.data)
       } else if (ev.event === 'done') {
@@ -481,6 +483,14 @@ export const useChatStore = defineStore('chat', {
         }
         default:
           break
+      }
+    },
+    handleRecommendationPreview(session: Session, turn: Turn, data: Record<string, unknown>): void {
+      turn.recommendation = (data.recommendation as Recommendation) ?? null
+      const top = turn.recommendation?.items[0]
+      if (!turn.impressed && top) {
+        turn.impressed = true
+        void recordEvent(session.id, 'impression', top.sku_id)
       }
     },
     handleInterrupt(turn: Turn, data: Record<string, unknown>): void {

@@ -1,7 +1,12 @@
+import asyncio
+from types import SimpleNamespace
+
 import pytest
+from langgraph.graph import START, StateGraph
 
 from app.agents.graph import _after_recommend
 from app.agents.nodes.recommend import recommend_node, select_top
+from app.agents.state import AgentState
 
 
 def _item(sku_id: str, final_price: float) -> dict:
@@ -39,7 +44,6 @@ def test_graph_skips_hitl_when_no_budget_eligible_recommendation_exists() -> Non
 
 @pytest.mark.anyio
 async def test_recommend_preserves_real_product_media_fields(monkeypatch) -> None:
-    from types import SimpleNamespace
     from app.agents.nodes import recommend
 
     class _FakeStructured:
@@ -66,3 +70,57 @@ async def test_recommend_preserves_real_product_media_fields(monkeypatch) -> Non
 
     assert result["recommendation"]["items"][0]["image_url"] == "https://img.example/item.jpg"
     assert result["recommendation"]["items"][0]["url"] == "https://mall.example/item"
+
+
+@pytest.mark.anyio
+async def test_recommend_streams_factual_preview_before_model_result(monkeypatch) -> None:
+    from app.agents.nodes import recommend
+
+    class _FakeStructured:
+        async def ainvoke(self, _messages):
+            await asyncio.sleep(0.01)
+            return SimpleNamespace(
+                summary="完整推荐理由",
+                reasons=[SimpleNamespace(sku_id="SKU1", reason="符合预算")],
+            )
+
+    monkeypatch.setattr(recommend, "get_structured_llm", lambda *_args: _FakeStructured())
+    graph = StateGraph(AgentState)
+    graph.add_node("recommend", recommend.recommend_node)
+    graph.add_edge(START, "recommend")
+    compiled = graph.compile()
+
+    chunks = [
+        chunk
+        async for chunk in compiled.astream(
+            {
+                "normalized": [_item("SKU1", 200)],
+                "preferences": {"budget": 300},
+                "profile_preferences": {},
+                "degraded_sources": [],
+            },
+            stream_mode=["updates", "custom"],
+        )
+    ]
+
+    preview_index = next(
+        index for index, (mode, payload) in enumerate(chunks)
+        if mode == "custom" and payload.get("event") == "recommendation_preview"
+    )
+    update_index = next(
+        index for index, (mode, payload) in enumerate(chunks)
+        if mode == "updates" and "recommend" in payload
+    )
+    preview = chunks[preview_index][1]["recommendation"]
+
+    assert preview_index < update_index
+    assert preview["items"] == [{
+        "sku_id": "SKU1",
+        "title": "SKU1",
+        "final_price": 200,
+        "platform": "pdd",
+        "attributes": {},
+        "image_url": "",
+        "url": "",
+        "reason": "",
+    }]
