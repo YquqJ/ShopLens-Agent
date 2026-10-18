@@ -1,74 +1,59 @@
 {
+  "description": "完整 Agent 工作流评测集。任务默认使用 mock 数据源；order 任务会经过 interrupt/resume、锁价和订单落库，运行前必须配置隔离评测库并设置 TASK_EVAL_ALLOW_DB_WRITES=1。",
   "tasks": [
-    {
-      "id": "recommend_complete_request",
-      "type": "recommendation",
-      "message": "想买一件男款简约黑色衬衫，预算300元"
-    },
-    {
-      "id": "clarify_then_recommend",
-      "type": "clarification",
-      "messages": [
-        "想买一件男款简约衬衫",
-        "预算300元，黑色，适合通勤"
-      ]
-    },
-    {
-      "id": "cancel_after_confirmation",
-      "type": "cancel",
-      "message": "想买一件男款简约黑色衬衫，预算300元",
-      "resume": false
-    },
-    {
-      "id": "confirm_and_place_order",
-      "type": "order",
-      "message": "想买一件男款简约黑色衬衫，预算300元",
-      "resume": true
-    },
-    {
-      "id": "non_shopping_request",
-      "type": "other",
-      "message": "你好"
-    },
-    {
-      "id": "recommend_womens_sweatshirt",
-      "type": "recommendation",
-      "message": "推荐女款深蓝色运动卫衣，预算400元"
-    },
-    {
-      "id": "recommend_mens_cotton_tshirt",
-      "type": "recommendation",
-      "message": "想买男款纯棉黑色T恤，预算150元"
-    },
-    {
-      "id": "recommend_travel_jacket",
-      "type": "recommendation",
-      "message": "帮我找一件旅行穿的简约外套，预算800元，卡其色"
-    },
-    {
-      "id": "clarify_three_turn_request",
-      "type": "clarification",
-      "messages": [
-        "帮我挑一件衣服",
-        "男款衬衫",
-        "预算500，深蓝色，通勤穿"
-      ]
-    },
-    {
-      "id": "direct_cancel",
-      "type": "cancel",
-      "message": "这轮先不买了"
-    },
-    {
-      "id": "unrelated_question",
-      "type": "other",
-      "message": "你能帮我查一下天气吗"
-    },
-    {
-      "id": "confirm_and_place_order_sweatshirt",
-      "type": "order",
-      "message": "想买一件男款深蓝运动卫衣，预算400元",
-      "resume": true
-    }
+    {"id": "recommend_mens_black_shirt_commute", "type": "recommendation", "message": "想买一件男款简约黑色衬衫，预算300元，通勤穿"},
+    {"id": "recommend_womens_blue_sweatshirt_sport", "type": "recommendation", "message": "推荐女款蓝色运动卫衣，预算500元"},
+    {"id": "recommend_mens_black_tshirt_weekend", "type": "recommendation", "message": "想买男款纯棉黑色T恤，预算300元，周末穿"},
+    {"id": "recommend_womens_white_outerwear_travel", "type": "recommendation", "message": "想买女款白色简约外套，预算1000元，旅行穿"},
+    {"id": "recommend_mens_blue_shoes_weekend", "type": "recommendation", "message": "帮我选一双男款蓝色运动鞋，预算600元，周末穿"},
+    {"id": "recommend_womens_red_shirt_date", "type": "recommendation", "message": "想买女款红色衬衫，预算500元，约会穿"},
+    {"id": "recommend_mens_white_sweatshirt", "type": "recommendation", "message": "推荐男款白色宽松卫衣，预算500元，日常穿"},
+    {"id": "recommend_womens_black_tshirt", "type": "recommendation", "message": "想买女款黑色简约T恤，预算300元，通勤穿"},
+    {"id": "recommend_mens_red_sweatshirt", "type": "recommendation", "message": "想买男款红色街头卫衣，预算600元，周末穿"},
+    {"id": "recommend_womens_yellow_outerwear", "type": "recommendation", "message": "推荐女款黄色外套，预算1200元，旅行穿"},
+    {"id": "recommend_mens_black_shoes", "type": "recommendation", "message": "想买男款黑色真皮鞋，预算700元，通勤穿"},
+    {"id": "recommend_womens_blue_tshirt", "type": "recommendation", "message": "帮我挑女款蓝色纯棉T恤，预算300元，运动穿"},
+    {"id": "recommend_mens_white_shirt", "type": "recommendation", "message": "想买男款白色亚麻衬衫，预算500元，旅行穿"},
+    {"id": "recommend_womens_black_sweatshirt", "type": "recommendation", "message": "推荐女款黑色简约卫衣，预算600元，周末穿"},
+
+    {"id": "clarify_tshirt_from_generic_clothing", "type": "clarification", "messages": ["想买件衣服", "男款黑色T恤，预算300元，周末穿"]},
+    {"id": "clarify_shirt_from_category_only", "type": "clarification", "messages": ["想买一件衬衫", "女款白色衬衫，预算500元，通勤穿"]},
+    {"id": "clarify_sweatshirt_from_budget_only", "type": "clarification", "messages": ["预算500元左右", "男款蓝色运动卫衣，日常穿"]},
+    {"id": "clarify_shoes_from_missing_details", "type": "clarification", "messages": ["想买一双鞋", "女款红色运动鞋，预算600元，周末穿"]},
+    {"id": "clarify_outerwear_from_missing_budget", "type": "clarification", "messages": ["想买男款黑色外套", "预算1000元，简约风，旅行穿"]},
+    {"id": "clarify_tshirt_from_partial_profile", "type": "clarification", "messages": ["预算300元，想买女款衣服", "白色简约T恤，周末穿"]},
+    {"id": "clarify_shirt_three_turn", "type": "clarification", "messages": ["帮我挑一件衣服", "男款衬衫", "预算500元，白色，通勤穿"]},
+    {"id": "clarify_shoes_three_turn", "type": "clarification", "messages": ["买双鞋", "女款黑色鞋", "预算500元，周末穿"]},
+    {"id": "clarify_outerwear_three_turn", "type": "clarification", "messages": ["预算800元", "女款黄色外套", "通勤穿，简约风"]},
+    {"id": "clarify_tshirt_three_turn", "type": "clarification", "messages": ["想给自己买一件衣服", "男款红色T恤", "预算300元，周末穿"]},
+    {"id": "clarify_sweatshirt_from_style_only", "type": "clarification", "messages": ["想要一件宽松卫衣", "女款黑色，预算600元，日常穿"]},
+    {"id": "clarify_shirt_from_gender_only", "type": "clarification", "messages": ["给男生买衣服", "白色亚麻衬衫，预算500元，旅行穿"]},
+
+    {"id": "order_mens_black_shirt", "type": "order", "message": "想买一件男款简约黑色衬衫，预算300元，通勤穿", "resume": true},
+    {"id": "order_womens_blue_sweatshirt", "type": "order", "message": "想买一件女款蓝色运动卫衣，预算500元", "resume": true},
+    {"id": "order_mens_white_tshirt", "type": "order", "message": "想买男款白色纯棉T恤，预算300元，周末穿", "resume": true},
+    {"id": "order_womens_black_outerwear", "type": "order", "message": "想买女款黑色简约外套，预算1200元，旅行穿", "resume": true},
+    {"id": "order_mens_blue_shoes", "type": "order", "message": "想买男款蓝色运动鞋，预算700元，周末穿", "resume": true},
+    {"id": "order_womens_red_shirt", "type": "order", "message": "想买女款红色衬衫，预算500元，约会穿", "resume": true},
+    {"id": "order_mens_black_sweatshirt", "type": "order", "message": "想买男款黑色街头卫衣，预算600元，周末穿", "resume": true},
+    {"id": "order_womens_white_tshirt", "type": "order", "message": "想买女款白色简约T恤，预算300元，通勤穿", "resume": true},
+
+    {"id": "cancel_after_shirt_confirmation", "type": "cancel", "message": "想买一件男款简约黑色衬衫，预算300元，通勤穿", "resume": false},
+    {"id": "cancel_after_sweatshirt_confirmation", "type": "cancel", "message": "想买女款蓝色运动卫衣，预算500元", "resume": false},
+    {"id": "cancel_after_tshirt_confirmation", "type": "cancel", "message": "想买男款白色纯棉T恤，预算300元，周末穿", "resume": false},
+    {"id": "cancel_after_shoes_confirmation", "type": "cancel", "message": "想买女款黑色运动鞋，预算600元，周末穿", "resume": false},
+    {"id": "cancel_direct_not_buying", "type": "cancel", "message": "这轮先不买了"},
+    {"id": "cancel_direct_end_guidance", "type": "cancel", "message": "结束本轮导购"},
+    {"id": "cancel_direct_not_needed", "type": "cancel", "message": "暂时不需要了"},
+    {"id": "cancel_direct_stop_shopping", "type": "cancel", "message": "取消当前购物流程"},
+
+    {"id": "other_greeting", "type": "other", "message": "你好"},
+    {"id": "other_weather_question", "type": "other", "message": "你能帮我查一下天气吗"},
+    {"id": "other_cooking_question", "type": "other", "message": "你会做菜吗"},
+    {"id": "other_identity_question", "type": "other", "message": "你能做什么"},
+    {"id": "other_news_question", "type": "other", "message": "今天有什么新闻"},
+    {"id": "other_translation_question", "type": "other", "message": "帮我翻译一句英文"},
+    {"id": "other_math_question", "type": "other", "message": "1加1等于几"},
+    {"id": "other_capability_question", "type": "other", "message": "你支持语音聊天吗"}
   ]
 }

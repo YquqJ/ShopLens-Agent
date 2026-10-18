@@ -2,7 +2,7 @@
 
 设计决策：
 - M5 基线 ~755 tok/会话（全量：qwen-plus 三节点 + 字典 repr 全文上下文）；
-  M7 起实测「分层（clarify/route→qwen-turbo）+ 结构化裁剪（推荐上下文紧凑化）」后的数字，
+  M7 起实测「分层（route→qwen-flash，clarify/recommend→qwen-plus）+ 结构化裁剪（推荐上下文紧凑化）」后的数字，
   与 M5 基线对比产出降幅；
 - 计数用 tiktoken cl100k_base 近似（Qwen 官方分词器略有出入，仅作相对对比）：
   输入侧由节点消息精确重建，输出侧用结构化结果的 model_dump json 近似；

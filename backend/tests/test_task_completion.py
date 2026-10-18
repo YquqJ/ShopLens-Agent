@@ -1,13 +1,33 @@
+import json
+from collections import Counter
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 import pytest
 
 from app.eval.task_completion import (
+    TASK_SET,
     UsageCollector,
     completion_summary,
     require_order_eval_opt_in,
     task_succeeded,
 )
+
+
+def test_task_set_has_fifty_balanced_agent_workflow_cases() -> None:
+    tasks = json.loads(TASK_SET.read_text(encoding="utf-8"))["tasks"]
+
+    assert len(tasks) == 50
+    assert len({task["id"] for task in tasks}) == 50
+    assert Counter(task["type"] for task in tasks) == {
+        "recommendation": 14,
+        "clarification": 12,
+        "order": 8,
+        "cancel": 8,
+        "other": 8,
+    }
+    assert all(task.get("message") or task.get("messages") for task in tasks)
+    assert all(len(task["messages"]) >= 2 for task in tasks if task["type"] == "clarification")
+    assert all(task.get("resume") is True for task in tasks if task["type"] == "order")
 
 
 def test_recommendation_task_requires_a_non_empty_recommendation() -> None:
