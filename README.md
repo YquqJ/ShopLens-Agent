@@ -8,7 +8,7 @@ ShopLens 是一个面向电商售前场景的 **LangGraph 单 Agent 导购系统
 
 - **单 Agent 交易编排**：基于 LangGraph StateGraph 串联意图路由、需求澄清、商品检索、跨平台比价、推荐、确认、锁价和下单。
 - **多轮需求结构化**：从自然语言提取品类、预算、颜色、风格、材质、场景等字段，支持跨轮补全，并区分本轮条件与跨会话偏好。
-- **MCP 多源工具调用**：通过 FastMCP 提供京东、淘宝、拼多多仿真报价，以及优惠券、物流和可选真实商品检索源；由 `langchain-mcp-adapters` 加载为 LangChain 工具。
+- **MCP 多源工具调用**：通过本地 FastMCP 提供京东、淘宝、拼多多仿真报价，以及优惠券、物流工具；真实商品检索接入值得买官方 Streamable HTTP MCP，由 `langchain-mcp-adapters` 统一加载为 LangChain 工具。
 - **事实约束与可解释推荐**：价格、库存、平台、商品属性来自数据库和工具，LLM 只生成推荐理由；推荐结果保留商品属性和来源信息。
 - **HITL 与价格锁定**：下单前暂停图执行，用户确认后通过 `Command(resume=...)` 恢复；二次询价发现涨价时重新确认，避免展示价与下单价不一致。
 - **可靠性治理**：每个 MCP 数据源独立使用指数退避重试、三态熔断和降级策略，故障源不会阻塞其他数据源。
@@ -35,7 +35,7 @@ MCP 数据源:
   price_jd / price_taobao / price_pdd  多平台报价
   coupon                              优惠券
   logistics                           物流与运费
-  zhidemai                            可选真实商品检索源
+  haina (streamable_http)             值得买官方真实商品检索源
 
 事实数据:
   PostgreSQL  商品、库存、会话、画像、订单和检查点
@@ -138,7 +138,9 @@ pnpm dev
 - `mock`：京东、淘宝、拼多多仿真报价，附带优惠券和物流数据，可用于完整比价、锁价和下单演示。
 - `real`：启用值得买真实商品检索源，需要配置 `ZDM_API_KEY` 和 `SHOPLENS_ZHIDEMAI_ENABLED=1`；真实模式用于商品检索，不进入仿真下单闭环。
 
-MCP server 使用 stdio 子进程运行，每个数据源有独立进程和持久化 session。应用启动时由 MCP client 建立 session、加载工具，再交给 LangGraph 节点调用。
+真实源通过官方 Streamable HTTP MCP 连接：`https://gw-openapi.zhidemai.com/ai-mcp/streamable/mcp`。客户端启动时动态发现 `haina_product_search_pro` 工具，并将官方返回的商品、价格、平台、图片和链接归一为推荐卡片。
+
+本地仿真 MCP server 使用 stdio 子进程运行，每个数据源有独立进程和持久化 session；值得买真实源使用官方 Streamable HTTP MCP。应用启动时由 MCP client 建立 session、动态发现工具，再交给 LangGraph 节点调用。
 
 ## 评测与测试
 

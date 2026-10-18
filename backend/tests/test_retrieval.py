@@ -74,7 +74,9 @@ def test_matches_respects_hard_constraints():
 
 
 def test_mcp_adapter_registers_real_source_server():
-    assert adapter.SERVERS["zhidemai"] == "app.mcp.zhidemai"
+    assert "haina" in adapter.SERVERS
+    assert adapter.SERVERS["haina"]["transport"] == "streamable_http"
+    assert adapter.SERVERS["haina"]["url"].endswith("/ai-mcp/streamable/mcp")
 
 
 @pytest.mark.anyio
@@ -154,6 +156,46 @@ async def test_retrieve_real_mode_calls_zhidemai_mcp_and_builds_recommendable_it
     assert result["normalized"][0]["best"]["platform"] == "京东"
 
 
+@pytest.mark.anyio
+async def test_retrieve_real_mode_parses_official_haina_product_search_response():
+    class _Tool:
+        description = "Get Product Pro Search"
+
+        async def ainvoke(self, payload):
+            assert payload["product_query"] == "透气显瘦 T恤"
+            return [{
+                "type": "text",
+                "text": json.dumps({
+                    "error_code": 0,
+                    "error_msg": "Success",
+                    "data": [{
+                        "title": "透气显瘦T恤",
+                        "page_price": 128,
+                        "mall_name": "淘宝精选",
+                        "cate3_name": "运动T恤",
+                        "main_picture": "https://img.example/tshirt.jpg",
+                        "url": "https://example.test/tshirt",
+                    }],
+                }, ensure_ascii=False),
+            }]
+
+    result = await retrieve.retrieve_node(
+        {
+            "preferences": {"category": "T恤", "requirements": "透气显瘦"},
+            "profile_preferences": {},
+            "messages": [HumanMessage("我要买一件透气显瘦的T恤")],
+        },
+        {"configurable": {
+            "source_mode": "real",
+            "mcp_tools": {"haina_product_search_pro": _Tool()},
+        }},
+    )
+
+    assert result["zdm_mode"] is True
+    assert result["normalized"][0]["final_price"] == 128
+    assert result["normalized"][0]["best"]["platform"] == "淘宝精选"
+
+
 def test_real_normalized_item_preserves_picture_and_external_url():
     result = retrieve._zhidemai_to_normalized([{
         "title": "真实商品",
@@ -169,7 +211,7 @@ def test_real_normalized_item_preserves_picture_and_external_url():
 
 @pytest.mark.anyio
 async def test_retrieve_real_mode_does_not_silently_fallback_without_mcp_tool():
-    with pytest.raises(RuntimeError, match="zhidemai_search_real_products"):
+    with pytest.raises(RuntimeError, match="Haina 商品搜索 MCP 工具"):
         await retrieve.retrieve_node(
             {"preferences": {"category": "耳机"}, "profile_preferences": {}, "messages": []},
             {"configurable": {"source_mode": "real", "mcp_tools": {}}},

@@ -66,6 +66,35 @@ def _zhidemai_enabled() -> bool:
     return bool(settings.SHOPLENS_ZHIDEMAI_ENABLED) and bool(settings.ZDM_API_KEY)
 
 
+def _find_real_search_tool(tools: dict):
+    """按工具名和描述发现官方 Haina MCP 的商品搜索工具。"""
+    preferred = (
+        tools.get("haina_product_search_pro")
+        or tools.get("haina_search_products")
+        or tools.get("zhidemai_search_real_products")
+    )
+    if preferred is not None:
+        return preferred
+    for name, tool in tools.items():
+        lowered = name.lower()
+        description = str(getattr(tool, "description", "")).lower()
+        if "search" in lowered and any(word in lowered + description for word in ("product", "商品")):
+            return tool
+    return None
+
+
+def _real_items(result) -> list[dict]:
+    """统一官方 Haina MCP 与旧本地 wrapper 的返回结构。"""
+    if isinstance(result, dict):
+        data = result.get("data")
+        if isinstance(data, list):
+            return data
+        items = result.get("items")
+        if isinstance(items, list):
+            return items
+    return result if isinstance(result, list) else []
+
+
 def _source_mode(config: RunnableConfig | None) -> str:
     """请求显式指定模式时优先使用；旧调用未传时兼容环境变量开关。"""
     configurable = (config or {}).get("configurable", {})
@@ -97,10 +126,10 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
     """
     normalized: list[dict] = []
     for i, it in enumerate(items, 1):
-        price = it.get("price")
+        price = it.get("price", it.get("page_price"))
         if price is None:  # 无报价商品跳过，不编造价格
             continue
-        mall = it.get("mall") or "未知商城"
+        mall = it.get("mall") or it.get("mall_name") or "未知商城"
         quote = {
             "platform": mall,
             "price": price,
@@ -114,19 +143,19 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
         attributes = {
             k: str(v)
             for k, v in {
-                "品牌": it.get("brand"),
-                "品类": it.get("category"),
+                "品牌": it.get("brand") or it.get("brand_name"),
+                "品类": it.get("category") or it.get("cate3_name") or it.get("cate2_name"),
                 "商城": mall,
-                "促销": it.get("promotion"),
+                "促销": it.get("promotion") or it.get("promotional_info"),
             }.items()
             if v not in (None, "")
         }
         normalized.append({
             "sku_id": f"ZDM{i:02d}",
             "title": it.get("title"),
-            "category": it.get("category"),
+            "category": it.get("category") or it.get("cate3_name") or it.get("cate2_name"),
             "attributes": attributes,
-            "image_url": it.get("picture") or "",
+            "image_url": it.get("picture") or it.get("main_picture") or "",
             "url": it.get("url") or "",
             "quotes": [quote],
             "best": quote,
@@ -146,17 +175,17 @@ async def retrieve_node(state: AgentState, config: RunnableConfig | None = None)
             state["messages"][-1].content if state.get("messages") else ""
         )
         tools = (config or {}).get("configurable", {}).get("mcp_tools", {})
-        search_tool = tools.get("zhidemai_search_real_products")
+        search_tool = _find_real_search_tool(tools)
         if search_tool is None:
-            raise RuntimeError("真实数据源未加载：缺少 zhidemai_search_real_products MCP 工具")
+            raise RuntimeError("真实数据源未加载：未发现 Haina 商品搜索 MCP 工具")
         payload: dict = {"product_query": query, "size": _TOP_K}
         if prefs.get("category"):
             payload["category_name"] = prefs["category"]
         if prefs.get("budget") not in (None, ""):
             payload["max_price"] = int(float(prefs["budget"]))
         result = _unwrap_mcp_result(await search_tool.ainvoke(payload))
-        items = result.get("items", []) if isinstance(result, dict) else result
-        if not isinstance(items, list):
+        items = _real_items(result)
+        if not items:
             raise RuntimeError("值得买 MCP 返回了无法解析的商品列表")
         normalized = _zhidemai_to_normalized(items)
         # candidates 仅作 trace 计数与结构复用（sku_id 为 ZDM 合成 id）

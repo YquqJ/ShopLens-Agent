@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Chroma 向量持久化目录（本地文件，无独立容器）
     CHROMA_DIR: str = "chroma"
 
-    # 值得买海纳开放平台 apikey（真实商品检索源，方案 B：可开关，非核心比价路径）
+    # 值得买海纳开放平台 apikey（官方 Streamable HTTP MCP 真实商品检索源）
     ZDM_API_KEY: str = ""
 
     # 是否启用真实商品检索源；置 1 后检索层直连海纳，跳过比价/下单闭环
