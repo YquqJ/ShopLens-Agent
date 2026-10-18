@@ -126,7 +126,15 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
     """
     normalized: list[dict] = []
     for i, it in enumerate(items, 1):
-        price = it.get("price", it.get("page_price"))
+        # 官方 Haina 同时返回 page_price 数值和 price 展示字符串（如 "¥128"）；
+        # 业务计算必须优先使用 page_price，避免字符串参与预算比较。
+        raw_price = it.get("page_price")
+        if raw_price in (None, ""):
+            raw_price = it.get("price")
+        try:
+            price = float(raw_price) if raw_price not in (None, "") else None
+        except (TypeError, ValueError):
+            price = None
         if price is None:  # 无报价商品跳过，不编造价格
             continue
         mall = it.get("mall") or it.get("mall_name") or "未知商城"

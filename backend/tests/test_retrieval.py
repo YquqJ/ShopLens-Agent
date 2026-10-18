@@ -171,6 +171,7 @@ async def test_retrieve_real_mode_parses_official_haina_product_search_response(
                     "data": [{
                         "title": "透气显瘦T恤",
                         "page_price": 128,
+                        "price": "¥128",
                         "mall_name": "淘宝精选",
                         "cate3_name": "运动T恤",
                         "main_picture": "https://img.example/tshirt.jpg",
@@ -194,6 +195,39 @@ async def test_retrieve_real_mode_parses_official_haina_product_search_response(
     assert result["zdm_mode"] is True
     assert result["normalized"][0]["final_price"] == 128
     assert result["normalized"][0]["best"]["platform"] == "淘宝精选"
+
+
+@pytest.mark.anyio
+async def test_retrieve_real_mode_uses_numeric_page_price_over_display_price():
+    class _Tool:
+        async def ainvoke(self, _payload):
+            return [{
+                "type": "text",
+                "text": json.dumps({
+                    "error_code": 0,
+                    "data": [{
+                        "title": "带展示价字符串的真实商品",
+                        "page_price": 128.0,
+                        "price": "¥128",
+                        "mall_name": "淘宝精选",
+                    }],
+                }, ensure_ascii=False),
+            }]
+
+    result = await retrieve.retrieve_node(
+        {
+            "preferences": {"category": "T恤", "budget": 200},
+            "profile_preferences": {},
+            "messages": [HumanMessage("买T恤")],
+        },
+        {"configurable": {
+            "source_mode": "real",
+            "mcp_tools": {"haina_product_search_pro": _Tool()},
+        }},
+    )
+
+    assert result["normalized"][0]["final_price"] == 128.0
+    assert isinstance(result["normalized"][0]["final_price"], float)
 
 
 def test_real_normalized_item_preserves_picture_and_external_url():

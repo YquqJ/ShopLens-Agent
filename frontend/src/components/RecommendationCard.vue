@@ -53,16 +53,6 @@ const selectedQuote = computed<Quote | null>(
 )
 const isRealSource = computed(() => rec.value.items.some((item) => Boolean(item.url)))
 
-function openExternal(url: string): void {
-  try {
-    const target = new URL(url)
-    if (target.protocol !== 'http:' && target.protocol !== 'https:') return
-    window.open(target.toString(), '_blank', 'noopener,noreferrer')
-  } catch {
-    // 外链格式异常时不打开窗口，仍保留当前推荐卡片。
-  }
-}
-
 function selectSku(item: RecommendItem): void {
   if (isRealSource.value) {
     selectedSkuId.value = item.sku_id
@@ -86,8 +76,7 @@ async function confirmReal(): Promise<void> {
   if (!item?.url || realActionPending.value) return
   realActionPending.value = true
   try {
-    const saved = await store.selectRealProduct(props.turn.id, item)
-    if (saved) openExternal(item.url)
+    await store.selectRealProduct(props.turn.id, item)
   } finally {
     realActionPending.value = false
   }
@@ -241,10 +230,10 @@ async function cancel(): Promise<void> {
       </div>
     </div>
 
-    <!-- 真实源商品选择确认：确认后才打开外链，取消则结束本轮推荐 -->
+    <!-- 真实源商品选择确认：确认后在对话中展示链接，取消则结束本轮推荐 -->
     <div v-if="isRealSource" class="hitl">
       <h3>商品选择确认</h3>
-      <p>选中商品后点击确认，才会打开商品外链。</p>
+      <p>选中商品后确认选择，商品链接会显示在对话中。</p>
       <div class="btn-row">
         <button class="btn btn-primary" :disabled="realActionPending || !selectedSkuId" @click="confirmReal">
           {{ realActionPending ? '处理中…' : '确认' }}
