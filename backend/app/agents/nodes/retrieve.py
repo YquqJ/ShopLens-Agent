@@ -7,6 +7,7 @@
   跳过 compare/normalize（真实源无跨平台 sku 对齐，且不可喂仿真比价源，否则价格现编）。
 """
 import json
+import math
 
 from langchain_core.runnables import RunnableConfig
 
@@ -14,8 +15,14 @@ from app.agents.state import AgentState
 from app.agents.nodes.memory import build_effective_preferences
 from app.core.config import settings
 from app.services import catalog
+from app.services.product_evidence import build_zdm_evidence
 
 _TOP_K = 5
+_MALL_IDS = {
+    "jd": 183, "京东": 183,
+    "taobao": 243, "淘宝": 243, "淘宝精选": 243,
+    "pdd": 8645, "拼多多": 8645,
+}
 
 # 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型/性别
 _CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit", "gender")
@@ -89,10 +96,36 @@ def _real_items(result) -> list[dict]:
         data = result.get("data")
         if isinstance(data, list):
             return data
+        if isinstance(data, dict) and isinstance(data.get("rows"), list):
+            return data["rows"]
         items = result.get("items")
         if isinstance(items, list):
             return items
     return result if isinstance(result, list) else []
+
+
+def build_real_search_payload(prefs: dict, *, query: str | None = None) -> dict:
+    """Build the supported Haina search filters without guessing unknown mall IDs."""
+    payload: dict = {
+        "product_query": query if query is not None else _build_real_query(prefs),
+        "size": _TOP_K,
+    }
+    if prefs.get("category"):
+        payload["category_name"] = prefs["category"]
+    if prefs.get("brand"):
+        payload["brand_name"] = prefs["brand"]
+    budget = prefs.get("budget")
+    try:
+        budget_number = float(budget)
+    except (TypeError, ValueError):
+        budget_number = math.nan
+    if math.isfinite(budget_number) and budget_number >= 0:
+        payload["max_price"] = int(budget_number)
+    platform = str(prefs.get("platform") or "").strip()
+    mall_id = _MALL_IDS.get(platform.lower(), _MALL_IDS.get(platform))
+    if mall_id is not None:
+        payload["mall_id"] = mall_id
+    return payload
 
 
 def _source_mode(config: RunnableConfig | None) -> str:
@@ -118,26 +151,52 @@ def _unwrap_mcp_result(result):
     return result
 
 
-def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
-    """值海纳真实商品摘要 → normalize 同构的 normalized 列表（单商城报价）。
-
-    值海纳是聚合源，无跨平台报价，故 quotes/best 只含「该商品当前商城的真实报价」，
-    eta_days=0（无物流时效字段）；价格取 services.zhidemai 规整后的 page_price 数值。
-    """
-    normalized: list[dict] = []
-    for i, it in enumerate(items, 1):
-        # 官方 Haina 同时返回 page_price 数值和 price 展示字符串（如 "¥128"）；
-        # 业务计算必须优先使用 page_price，避免字符串参与预算比较。
-        raw_price = it.get("page_price")
-        if raw_price in (None, ""):
-            raw_price = it.get("price")
-        try:
-            price = float(raw_price) if raw_price not in (None, "") else None
-        except (TypeError, ValueError):
-            price = None
-        if price is None:  # 无报价商品跳过，不编造价格
+def _zhidemai_to_candidates(items: list[dict]) -> list[dict]:
+    """Convert actual Haina results to product facts with stable source evidence."""
+    candidates: list[dict] = []
+    for it in items:
+        sku_id = f"ZDM{len(candidates) + 1:02d}"
+        evidence = build_zdm_evidence(it, sku_id)
+        values = {fact["field"]: fact["value"] for fact in evidence}
+        price = values.get("page_price")
+        title = values.get("title")
+        if price is None or not title:
             continue
-        mall = it.get("mall") or it.get("mall_name") or "未知商城"
+        picture = values.get("picture") or ""
+        attributes = {
+            label: str(values[field])
+            for field, label in (("brand", "品牌"), ("category", "品类"), ("mall", "商城"), ("promotion", "促销"))
+            if values.get(field) not in (None, "")
+        }
+        candidates.append({
+            "sku_id": sku_id,
+            "external_product_id": values.get("external_product_id"),
+            "title": title,
+            "category": values.get("category"),
+            "brand": values.get("brand"),
+            "mall": values.get("mall"),
+            "page_price": price,
+            "good_comments_share": values.get("good_comments_share"),
+            "price_tags": values.get("price_tags"),
+            "promotion": values.get("promotion"),
+            "picture": picture,
+            "image_url": picture,
+            "url": values.get("url") or "",
+            "attributes": attributes,
+            "price": price,
+            "stock": 1,
+            "score": 1.0,
+            "evidence": evidence,
+        })
+    return candidates
+
+
+def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
+    """Temporary adapter for the legacy recommendation node during graph migration."""
+    normalized: list[dict] = []
+    for candidate in _zhidemai_to_candidates(items):
+        price = candidate["page_price"]
+        mall = candidate["mall"] or "未知商城"
         quote = {
             "platform": mall,
             "price": price,
@@ -148,23 +207,13 @@ def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
             "final_price": price,
             "total_cost": price,
         }
-        attributes = {
-            k: str(v)
-            for k, v in {
-                "品牌": it.get("brand") or it.get("brand_name"),
-                "品类": it.get("category") or it.get("cate3_name") or it.get("cate2_name"),
-                "商城": mall,
-                "促销": it.get("promotion") or it.get("promotional_info"),
-            }.items()
-            if v not in (None, "")
-        }
         normalized.append({
-            "sku_id": f"ZDM{i:02d}",
-            "title": it.get("title"),
-            "category": it.get("category") or it.get("cate3_name") or it.get("cate2_name"),
-            "attributes": attributes,
-            "image_url": it.get("picture") or it.get("main_picture") or "",
-            "url": it.get("url") or "",
+            "sku_id": candidate["sku_id"],
+            "title": candidate["title"],
+            "category": candidate["category"],
+            "attributes": candidate["attributes"],
+            "image_url": candidate["image_url"],
+            "url": candidate["url"],
             "quotes": [quote],
             "best": quote,
             "final_price": price,
@@ -186,32 +235,20 @@ async def retrieve_node(state: AgentState, config: RunnableConfig | None = None)
         search_tool = _find_real_search_tool(tools)
         if search_tool is None:
             raise RuntimeError("真实数据源未加载：未发现 Haina 商品搜索 MCP 工具")
-        payload: dict = {"product_query": query, "size": _TOP_K}
-        if prefs.get("category"):
-            payload["category_name"] = prefs["category"]
-        if prefs.get("budget") not in (None, ""):
-            payload["max_price"] = int(float(prefs["budget"]))
+        payload = build_real_search_payload(prefs, query=query)
         result = _unwrap_mcp_result(await search_tool.ainvoke(payload))
         items = _real_items(result)
         if not items:
             raise RuntimeError("值得买 MCP 返回了无法解析的商品列表")
+        candidates = _zhidemai_to_candidates(items)
         normalized = _zhidemai_to_normalized(items)
-        # candidates 仅作 trace 计数与结构复用（sku_id 为 ZDM 合成 id）
-        candidates = [
-            {
-                "sku_id": n["sku_id"],
-                "title": n["title"],
-                "category": n["category"],
-                "attributes": n["attributes"],
-                "price": n["final_price"],
-                "stock": 1,
-                "image_url": n.get("image_url", ""),
-                "url": n.get("url", ""),
-                "score": 1.0,
-            }
-            for n in normalized
-        ]
-        return {"candidates": candidates, "normalized": normalized, "zdm_mode": True}
+        product_evidence = {candidate["sku_id"]: candidate["evidence"] for candidate in candidates}
+        return {
+            "candidates": candidates,
+            "product_evidence": product_evidence,
+            "normalized": normalized,
+            "zdm_mode": True,
+        }
 
     filters = _build_filters(prefs)
     semantic_q = _build_semantic_query(prefs)

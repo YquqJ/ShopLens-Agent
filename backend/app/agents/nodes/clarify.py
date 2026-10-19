@@ -18,8 +18,10 @@ from app.agents.state import AgentState, merge_preferences
 
 
 class Preferences(BaseModel):
-    category: str | None = Field(None, description="服饰品类，如 T恤/衬衫/卫衣/外套/裤装/鞋")
+    category: str | None = Field(None, description="商品品类，如 手机/耳机/外套/厨房用品")
     budget: float | None = Field(None, description="预算（元）")
+    platform: str | None = Field(None, description="用户本轮明确指定的商城，如 jd/taobao/pdd；未指定留空")
+    brand: str | None = Field(None, description="明确指定的商品品牌（无则留空）")
     color: str | None = Field(None, description="本次颜色偏好，如 黑色/深蓝（无则留空）")
     style: str | None = Field(None, description="风格偏好，如 简约/复古（无则留空）")
     material: str | None = Field(None, description="材质，如 纯棉/亚麻/羊毛（无则留空）")
@@ -36,22 +38,41 @@ class ClarifyResult(BaseModel):
 
 
 _SYSTEM = (
-    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景/版型/性别），拿不准的字段留空。"
-    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋；版型可填 修身/宽松/直筒/落肩，性别可填男款/女款。"
+    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/商城/品牌/颜色/风格/材质/场景/版型/性别），拿不准的字段留空。"
+    "品类可以是任意商品；服饰相关字段仅在用户购买服饰时填写。商城只在用户明确指定时填写，京东用 jd、淘宝用 taobao、拼多多用 pdd。"
     "无法归入这些闭集字段的功能/描述语（如 显瘦一点、透气）填到 requirements。"
-    "关键信息=品类+预算+性别，缺任一即 needs_clarification=True。性别只允许男款或女款。"
+    "关键信息=品类+预算，缺任一即 needs_clarification=True。"
 )
+
+_PLATFORM_ALIASES = {
+    "jd": "jd", "京东": "jd", "jingdong": "jd",
+    "taobao": "taobao", "淘宝": "taobao", "淘宝精选": "taobao",
+    "pdd": "pdd", "拼多多": "pdd",
+}
+
+
+def normalize_preferences(raw: dict) -> dict:
+    """Drop empty fields and canonicalize known explicitly requested malls."""
+    normalized = {
+        key: value for key, value in (raw or {}).items()
+        if value not in (None, "", [])
+    }
+    platform = normalized.get("platform")
+    if platform is not None:
+        platform_text = str(platform).strip()
+        normalized["platform"] = _PLATFORM_ALIASES.get(
+            platform_text.lower(), _PLATFORM_ALIASES.get(platform_text, platform_text),
+        )
+    return normalized
 
 
 def _missing(prefs: dict) -> list[str]:
-    """合并后仍缺的关键字段（品类/预算/性别）追问文案。"""
+    """Fields required before searching any product category."""
     missing = []
     if not prefs.get("category"):
-        missing.append("想买什么服饰品类（如T恤、衬衫、外套等）")
+        missing.append("想买什么商品")
     if prefs.get("budget") is None:
         missing.append("预算大概多少")
-    if not prefs.get("gender") and not prefs.get("preferred_genders"):
-        missing.append("男款还是女款")
     return missing
 
 
@@ -82,11 +103,7 @@ async def clarify_node(state: AgentState) -> dict:
     ])
 
     # 本轮提取 + 历史合并（非空覆盖，空字段回退历史）
-    new_prefs = {
-        key: value
-        for key, value in result.preferences.model_dump().items()
-        if value not in (None, "", [])
-    }
+    new_prefs = normalize_preferences(result.preferences.model_dump())
     merged = merge_preferences(prev, new_prefs)
 
     # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification

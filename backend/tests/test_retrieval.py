@@ -73,10 +73,12 @@ def test_matches_respects_hard_constraints():
     assert _matches(item, {}) is True  # 空约束 = 全部相关
 
 
-def test_mcp_adapter_registers_real_source_server():
-    assert "haina" in adapter.SERVERS
-    assert adapter.SERVERS["haina"]["transport"] == "streamable_http"
-    assert adapter.SERVERS["haina"]["url"].endswith("/ai-mcp/streamable/mcp")
+def test_mcp_adapter_registers_real_source_server(monkeypatch):
+    monkeypatch.setattr(adapter.settings, "ZDM_API_KEY", "test-key")
+    connections = adapter.server_connections()
+    assert "haina" in connections
+    assert connections["haina"]["transport"] == "streamable_http"
+    assert connections["haina"]["url"].endswith("/ai-mcp/streamable/mcp")
 
 
 @pytest.mark.anyio
@@ -228,6 +230,55 @@ async def test_retrieve_real_mode_uses_numeric_page_price_over_display_price():
 
     assert result["normalized"][0]["final_price"] == 128.0
     assert isinstance(result["normalized"][0]["final_price"], float)
+
+
+@pytest.mark.anyio
+async def test_retrieve_real_mode_filters_mall_and_returns_source_evidence():
+    class _Tool:
+        async def ainvoke(self, payload):
+            assert payload["mall_id"] == 183
+            return [{
+                "type": "text",
+                "text": json.dumps({"error_code": 0, "data": [{
+                    "id": "ITEM-7",
+                    "title": "降噪耳机",
+                    "page_price": 399,
+                    "mall_name": "京东",
+                    "brand_name": "Acme",
+                    "good_comments_share": 0.98,
+                    "price_tags": [{"title": "常卖价", "price": 499}],
+                    "main_picture": "https://img.example/headphone.jpg",
+                    "url": "https://shop.example/item-7",
+                }]}, ensure_ascii=False),
+            }]
+
+    result = await retrieve.retrieve_node(
+        {
+            "preferences": {"category": "耳机", "platform": "jd"},
+            "profile_preferences": {},
+            "messages": [HumanMessage("京东耳机")],
+        },
+        {"configurable": {
+            "source_mode": "real",
+            "mcp_tools": {"haina_product_search_pro": _Tool()},
+        }},
+    )
+
+    candidate = result["candidates"][0]
+    assert candidate["external_product_id"] == "ITEM-7"
+    assert candidate["page_price"] == 399
+    assert any(
+        fact["evidence_id"] == "ZDM01:zdm:external_product_id"
+        for fact in candidate["evidence"]
+    )
+    assert result["product_evidence"]["ZDM01"] == candidate["evidence"]
+
+
+def test_real_candidates_without_numeric_price_are_not_purchasable():
+    assert retrieve._zhidemai_to_candidates([{
+        "title": "缺少数值价格",
+        "price": "¥128",
+    }]) == []
 
 
 def test_real_normalized_item_preserves_picture_and_external_url():
