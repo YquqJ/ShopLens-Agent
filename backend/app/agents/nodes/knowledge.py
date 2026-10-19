@@ -9,7 +9,10 @@ from langchain_core.runnables import RunnableConfig
 from app.agents.nodes.memory import build_effective_preferences
 from app.agents.state import AgentState
 
-_KG_MARKERS = ("knowledge graph", "knowledge_graph", "knowledge-graph", "entity", "实体", "知识图谱", "_kg_")
+_KG_MARKERS = (
+    "knowledge graph", "knowledge_graph", "knowledge-graph", "content graph",
+    "content_graph", "content-graph", "entity", "实体", "知识图谱", "_kg_",
+)
 _QUERY_ARGUMENTS = {
     "query", "q", "search_query", "search_term", "search_text", "query_text",
     "keyword", "entity_query", "entity_name", "product_query",

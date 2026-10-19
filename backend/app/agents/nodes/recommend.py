@@ -45,6 +45,7 @@ _SYSTEM = (
     "你是电商导购。只能基于候选事实和 evidence_id 做横向比较。"
     "只返回候选中真实存在的 sku_id 和 evidence_id；不要输出价格、平台、属性值或来源文本。"
     "dimension 的 field 必须是同一字段，evidence_by_sku 至少覆盖两个候选。"
+    "每条 reasons 必须至少引用一个属于该 sku_id 的 evidence_id。"
     "没有足够横向证据时 best_sku_id 必须为 null。"
 )
 
@@ -109,9 +110,30 @@ def _build_evidence_items(top: list[dict], evidence: dict[str, list[dict]]) -> l
         items.append({
             "sku_id": item["sku_id"],
             "title": item.get("title"),
-            "evidence": [{"evidence_id": fact["evidence_id"], "field": fact["field"]} for fact in facts],
+            "evidence": [{
+                "evidence_id": fact["evidence_id"],
+                "field": fact["field"],
+                "value": fact.get("value"),
+            } for fact in facts],
         })
     return items
+
+
+def _fallback_reason(item: dict, facts: list[dict]) -> dict:
+    """Keep cards explainable when the model omits a valid reason citation."""
+    evidence_ids = [fact["evidence_id"] for fact in facts if fact.get("evidence_id")][:3]
+    fields = {fact.get("field") for fact in facts}
+    if any(
+        str(fact.get("field", "")).startswith("entity_")
+        or ":kg:" in str(fact.get("evidence_id"))
+        for fact in facts
+    ):
+        reason = "该商品有结构化商品属性证据可核验；当前横向证据不足，暂不宣称它绝对最优。"
+    elif "good_comments_share" in fields or "price_tags" in fields:
+        reason = "该商品具备价格与口碑相关的真实源证据；当前横向属性证据不足，建议结合你的需求选择。"
+    else:
+        reason = "该商品的标题、价格和商城信息来自值得买真实源，可核验；当前横向属性证据不足，建议结合需求选择。"
+    return {"sku_id": item["sku_id"], "reason": reason, "evidence_ids": evidence_ids}
 
 
 def select_top(normalized: list[dict], budget: float | None) -> list[dict]:
@@ -279,7 +301,7 @@ async def _recommend_with_evidence(state: AgentState) -> dict:
     reasons = {reason["sku_id"]: reason for reason in validated["reasons"]}
     items = []
     for item in ordered:
-        reason = reasons.get(item["sku_id"], {})
+        reason = reasons.get(item["sku_id"]) or _fallback_reason(item, evidence.get(item["sku_id"], []))
         items.append({
             "sku_id": item["sku_id"],
             "title": item.get("title"),

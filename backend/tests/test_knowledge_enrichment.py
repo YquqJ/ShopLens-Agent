@@ -89,6 +89,28 @@ async def test_kg_source_failure_degrades_without_discarding_product_evidence():
     assert result["product_evidence"] == {"ZDM01": product_evidence}
 
 
+def test_content_graph_search_is_discovered_as_kg_tool():
+    knowledge = _knowledge()
+
+    class _Tool:
+        description = "Get Content Graph Search"
+        input_schema = {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": [],
+        }
+
+    candidate = {
+        "sku_id": "ZDM01",
+        "title": "苹果 iPhone 17 Pro Max",
+        "brand": "苹果",
+        "model": "iPhone 17 Pro Max",
+        "category": "手机",
+    }
+
+    assert knowledge._find_kg_tool({"haina_content_graph_search": _Tool()}, candidate) is not None
+
+
 @pytest.mark.anyio
 async def test_kg_success_adds_matched_facts_and_keeps_article_links_as_metadata():
     knowledge = _knowledge()

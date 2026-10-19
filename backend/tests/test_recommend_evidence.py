@@ -1,4 +1,4 @@
-from app.agents.nodes.recommend import ComparisonResult, validate_comparison
+from app.agents.nodes.recommend import ComparisonResult, _build_evidence_items, validate_comparison
 
 
 def _fact(sku, field, value):
@@ -92,3 +92,20 @@ def test_best_sku_requires_a_valid_dimension_covering_it():
     )
 
     assert validated["best_sku_id"] is None
+
+
+def test_evidence_prompt_includes_source_values_for_reason_generation():
+    items = _build_evidence_items(
+        [{"sku_id": "ZDM01", "title": "商品 A"}],
+        {"ZDM01": [_fact("ZDM01", "page_price", 128)]},
+    )
+
+    assert items == [{
+        "sku_id": "ZDM01",
+        "title": "商品 A",
+        "evidence": [{
+            "evidence_id": "ZDM01:zdm:page_price",
+            "field": "page_price",
+            "value": 128,
+        }],
+    }]
