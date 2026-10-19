@@ -9,6 +9,7 @@
 """
 from datetime import datetime
 from decimal import Decimal
+import secrets
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -26,6 +27,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+
+
+def _default_order_number() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M") + f"{secrets.randbelow(1000):03d}"
 
 
 class Product(Base):
@@ -106,11 +111,15 @@ class Order(Base):
     order_intent_id: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, default=lambda: str(uuid4())
     )
+    order_number: Mapped[str] = mapped_column(
+        String(32), unique=True, index=True, default=_default_order_number
+    )
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     sku_id: Mapped[str] = mapped_column(String(64))
     title_snapshot: Mapped[str] = mapped_column(String(200), default="")
     source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_url_snapshot: Mapped[str | None] = mapped_column(String(512), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(16), nullable=True)  # jd/taobao/pdd/主库
     catalog_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     quoted_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)

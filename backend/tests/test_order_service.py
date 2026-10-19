@@ -66,6 +66,7 @@ async def test_place_order_persists_intent_and_product_snapshot(monkeypatch):
             "sku_id": "SKU1",
             "title": "黑色外套",
             "url": "https://mall.example/item",
+            "image_url": "https://img.example/item.jpg",
             "catalog_price": 399,
             "price": 299,
             "shipping_fee": 0,
@@ -79,8 +80,10 @@ async def test_place_order_persists_intent_and_product_snapshot(monkeypatch):
 
     assert result["status"] == "placed"
     assert result["order_intent_id"] == "intent-1"
+    assert result["order_number"]
     assert order_session.added[0].title_snapshot == "黑色外套"
     assert order_session.added[0].source_url == "https://mall.example/item"
+    assert order_session.added[0].image_url_snapshot == "https://img.example/item.jpg"
     assert order_session.added[0].order_intent_id == "intent-1"
 
 
@@ -114,3 +117,16 @@ async def test_place_order_is_idempotent_for_same_intent(monkeypatch):
     assert result["order_id"] == 99
     assert result["status"] == "placed"
     assert order_session.added == []
+
+
+def test_order_number_uses_minute_timestamp_and_three_random_digits(monkeypatch):
+    class _Clock:
+        @classmethod
+        def now(cls, _tz=None):
+            from datetime import datetime
+            return datetime(2026, 10, 19, 21, 12, tzinfo=_tz)
+
+    monkeypatch.setattr(order_service, "datetime", _Clock)
+    monkeypatch.setattr(order_service.secrets, "randbelow", lambda _limit: 678)
+
+    assert order_service._new_order_number() == "202610192112678"

@@ -7,6 +7,7 @@
 """
 from datetime import datetime, timezone
 from decimal import Decimal
+import secrets
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -27,18 +28,26 @@ def _profile_key(profile_key: str) -> str:
     return value
 
 
+def _new_order_number() -> str:
+    """Human-facing order number: local minute timestamp plus three random digits."""
+    return datetime.now().strftime("%Y%m%d%H%M") + f"{secrets.randbelow(1000):03d}"
+
+
 def _serialize_order(order: Order) -> dict:
     """统一订单响应，避免 ORM Decimal/对象泄漏到 SSE。"""
     return {
         "order_id": order.id,
         "order_intent_id": order.order_intent_id,
+        "order_number": getattr(order, "order_number", ""),
         "conversation_id": order.conversation_id,
         "sku_id": order.sku_id,
         "title": getattr(order, "title_snapshot", ""),
         "url": getattr(order, "source_url", None),
+        "image_url": getattr(order, "image_url_snapshot", None),
         "platform": order.platform,
         "final_price": float(order.final_price) if order.final_price is not None else None,
         "status": order.status,
+        "created_at": order.created_at.isoformat() if getattr(order, "created_at", None) else None,
     }
 
 
@@ -112,10 +121,12 @@ async def place_order(
             return _serialize_order(existing)
         order = Order(
             order_intent_id=intent_id,
+            order_number=_new_order_number(),
             conversation_id=conversation_id,
             sku_id=draft["sku_id"],
             title_snapshot=draft.get("title") or "",
             source_url=draft.get("url"),
+            image_url_snapshot=draft.get("image_url"),
             platform=draft.get("platform"),
             catalog_price=_dec(draft.get("catalog_price")),
             quoted_price=_dec(draft.get("price")),

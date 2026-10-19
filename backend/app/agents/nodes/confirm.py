@@ -22,6 +22,7 @@ def _draft(item: dict, quote: dict) -> dict:
         "sku_id": item["sku_id"],
         "title": item["title"],
         "url": item.get("url", ""),
+        "image_url": item.get("image_url", ""),
         "catalog_price": item.get("catalog_price"),
         "platform": quote["platform"],
         "price": quote["price"],
@@ -71,6 +72,7 @@ def _real_item(candidate: dict) -> dict:
         "sku_id": candidate["sku_id"],
         "title": candidate.get("title") or "",
         "url": candidate.get("url") or "",
+        "image_url": candidate.get("image_url") or candidate.get("picture") or "",
         "catalog_price": candidate.get("catalog_price") or candidate.get("page_price"),
         "best": _real_quote(candidate),
     }

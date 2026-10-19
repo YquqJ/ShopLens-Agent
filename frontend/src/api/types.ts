@@ -100,11 +100,14 @@ export interface OrderResult {
   order_id?: number
   conversation_id?: number
   sku_id?: string
+  order_number?: string
+  title?: string
+  image_url?: string | null
+  created_at?: string | null
   platform?: string
   final_price?: number
   status?: string
   order_intent_id?: string
-  title?: string
   url?: string | null
 }
 

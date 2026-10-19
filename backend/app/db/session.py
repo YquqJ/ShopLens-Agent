@@ -9,6 +9,8 @@
 """
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -39,3 +41,17 @@ async def init_db() -> None:
     """建表：M0 无模型时为空操作；M1 引入 models 后 import 即注册 metadata。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all 不会为已存在的旧表补列；订单模型演进需要显式兼容迁移。
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_intent_id VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS title_snapshot VARCHAR(200) NOT NULL DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS source_url VARCHAR(512)"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS image_url_snapshot VARCHAR(512)"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS catalog_price NUMERIC(10, 2)"))
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee NUMERIC(10, 2)"))
+        await conn.execute(text("UPDATE orders SET order_intent_id = 'legacy-' || id::text WHERE order_intent_id IS NULL"))
+        await conn.execute(text("UPDATE orders SET order_number = 'LEGACY-' || id::text WHERE order_number IS NULL"))
+        await conn.execute(text("ALTER TABLE orders ALTER COLUMN order_intent_id SET NOT NULL"))
+        await conn.execute(text("ALTER TABLE orders ALTER COLUMN order_number SET NOT NULL"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_order_intent_id ON orders(order_intent_id)"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_order_number ON orders(order_number)"))

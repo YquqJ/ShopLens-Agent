@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
 import RecommendationCard from './RecommendationCard.vue'
+import OrderCard from './OrderCard.vue'
 
 const store = useChatStore()
 const scrollEl = ref<HTMLElement>()
@@ -91,6 +92,8 @@ watch(() => store.activeSession.turns.length, scrollToBottom)
         </div>
         <div class="bubble">{{ turn.recommendation.summary }}</div>
       </div>
+
+      <OrderCard v-if="turn.order?.status === 'placed'" :order="turn.order" />
 
       <!-- 异常 -->
       <div v-if="turn.error" class="msg agent">
