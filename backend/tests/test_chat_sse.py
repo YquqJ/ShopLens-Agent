@@ -47,6 +47,7 @@ class RecommendationPreviewGraph:
         yield "custom", {
             "event": "recommendation_preview",
             "recommendation": {"summary": "", "items": [{"sku_id": "SKU1"}], "degraded_sources": []},
+            "recommendation_intro": "根据您的需求，为你推荐1款候选",
         }
         yield "updates", {"recommend": {"recommendation": {"summary": "完整理由", "items": [{"sku_id": "SKU1"}]}}}
 
@@ -62,3 +63,4 @@ async def test_stream_forwards_recommendation_preview_before_final_node_update()
     final_index = next(index for index, frame in enumerate(frames) if '"node": "recommend"' in frame)
 
     assert preview_index < final_index
+    assert "根据您的需求，为你推荐1款候选" in frames[preview_index]

@@ -32,10 +32,12 @@ async def test_recommend_returns_a_budget_message_without_calling_the_llm(monkey
         "preferences": {"budget": 200},
         "profile_preferences": {},
         "degraded_sources": [],
+        "turn_id": "turn-budget",
     })
 
     assert result["recommendation"]["items"] == []
     assert "预算" in result["recommendation"]["summary"]
+    assert result["recommendation_history"][0]["turn_id"] == "turn-budget"
 
 
 def test_graph_skips_hitl_when_no_budget_eligible_recommendation_exists() -> None:
@@ -63,13 +65,16 @@ async def test_recommend_preserves_real_product_media_fields(monkeypatch) -> Non
             "url": "https://mall.example/item",
             "best": {"platform": "京东", "final_price": 199, "price": 199, "total_cost": 199},
         }],
-        "preferences": {"budget": 300},
+        "preferences": {"category": "无人机", "color": "白色", "budget": 8000},
         "profile_preferences": {},
         "degraded_sources": [],
+        "turn_id": "turn-real",
     })
 
     assert result["recommendation"]["items"][0]["image_url"] == "https://img.example/item.jpg"
     assert result["recommendation"]["items"][0]["url"] == "https://mall.example/item"
+    assert result["recommendation_history"][0]["turn_id"] == "turn-real"
+    assert result["recommendation_intro"] == "根据您的“无人机 · 白色 · 预算 ¥8000”需求，为你推荐1款候选"
 
 
 @pytest.mark.anyio
@@ -124,3 +129,4 @@ async def test_recommend_streams_factual_preview_before_model_result(monkeypatch
         "url": "",
         "reason": "",
     }]
+    assert preview["recommendation_intro"] == "根据您的“预算 ¥300”需求，为你推荐1款候选"

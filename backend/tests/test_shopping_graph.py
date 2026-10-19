@@ -38,3 +38,8 @@ def test_initial_state_has_evidence_and_comparison_fields():
     assert state["kg_status"] == {}
     assert state["comparison"] == {}
     assert state["order_intent_id"] is None
+    assert state["turn_id"]
+    assert state["recommendation_history"] == []
+    assert state["order_history"] == []
+    assert state["recommendation_intro"] == ""
+    assert state["messages"][0].additional_kwargs["turn_id"] == state["turn_id"]

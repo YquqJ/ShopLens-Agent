@@ -37,4 +37,14 @@ async def place_order_node(state: AgentState, config: RunnableConfig) -> dict:
     # 下单成功摘要回写 messages：checkpointer 累加保存，切会话回来据此在原位还原「已下单」
     platform = draft.get("platform") or ""
     summary = f"已下单「{draft['title']}」· ¥{_fmt_price(draft['final_price'])} · {_PLATFORM_NAMES.get(platform, platform)}"
-    return {"order": order, "messages": [AIMessage(summary)]}
+    order_id = order.get("order_id") if isinstance(order, dict) else None
+    already_recorded = any(
+        entry.get("turn_id") == state.get("turn_id")
+        or (order_id is not None and (entry.get("order") or {}).get("order_id") == order_id)
+        for entry in state.get("order_history", [])
+    )
+    return {
+        "order": order,
+        "order_history": [] if already_recorded else [{"turn_id": state.get("turn_id"), "order": order}],
+        "messages": [AIMessage(summary)],
+    }

@@ -159,6 +159,18 @@ export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
   ts?: number
+  turn_id?: string
+}
+
+export interface RecommendationHistoryEntry {
+  turn_id: string
+  recommendation: Recommendation
+  intro?: string
+}
+
+export interface OrderHistoryEntry {
+  turn_id: string
+  order: OrderResult
 }
 
 export interface ConversationDetail {
@@ -168,8 +180,11 @@ export interface ConversationDetail {
   memory_events: MemoryEvent[]
   normalized: NormalizedItem[]
   recommendation: Recommendation | null
+  recommendation_intro: string
+  recommendation_history: RecommendationHistoryEntry[]
   draft_order: DraftOrder | null
   order: OrderResult | null
+  order_history: OrderHistoryEntry[]
   price_raised: boolean
   awaiting_hitl: boolean
 }

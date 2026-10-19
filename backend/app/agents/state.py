@@ -9,6 +9,7 @@
 """
 import operator
 import time
+import uuid
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import HumanMessage
@@ -44,6 +45,9 @@ def should_reset_session(state: dict) -> bool:
 
 class AgentState(TypedDict):
     messages: Annotated[list[Any], operator.add]
+    turn_id: str
+    recommendation_history: Annotated[list[dict], operator.add]
+    order_history: Annotated[list[dict], operator.add]
     preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
     profile_preferences: dict  # 用户授权的跨会话长期偏好（不混入本轮 preferences）
     memory_events: Annotated[list[dict], operator.add]  # trace-safe 记忆读取/写入事件
@@ -63,6 +67,7 @@ class AgentState(TypedDict):
     normalized: list[dict]
     degraded_sources: list[str]   # M6：本次比价中熔断/失败的平台（"暂不可比"，供推荐透出）
     recommendation: dict
+    recommendation_intro: str
     draft_order: dict | None
     order: dict | None
     lock_attempts: int   # 下单前二次询价「涨价」重确认次数
@@ -73,8 +78,12 @@ class AgentState(TypedDict):
 
 def initial_state(message: str, *, reset_preferences: bool = False) -> AgentState:
     """构造初始状态（首轮用户消息 + 各字段默认值）。"""
+    turn_id = str(uuid.uuid4())
     return {
-        "messages": [HumanMessage(message, additional_kwargs={"ts": time.time()})],
+        "messages": [HumanMessage(message, additional_kwargs={"ts": time.time(), "turn_id": turn_id})],
+        "turn_id": turn_id,
+        "recommendation_history": [],
+        "order_history": [],
         "preferences": {_RESET_SESSION_PREFERENCES: True} if reset_preferences else {},
         "profile_preferences": {},
         "memory_events": [],
@@ -94,6 +103,7 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "normalized": [],
         "degraded_sources": [],
         "recommendation": {},
+        "recommendation_intro": "",
         "draft_order": None,
         "order": None,
         "lock_attempts": 0,

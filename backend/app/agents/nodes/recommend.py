@@ -197,7 +197,7 @@ def build_user(prefs: dict, top: list[dict], degraded: list[str], *, compact: bo
     return user
 
 
-def build_recommendation_preview(top: list[dict], degraded: list[str]) -> dict:
+def build_recommendation_preview(top: list[dict], degraded: list[str], intro: str = "") -> dict:
     """在 LLM 生成理由前发送可验证的商品事实，缩短首张推荐卡片 TTFT。"""
     return {
         "summary": "",
@@ -212,7 +212,35 @@ def build_recommendation_preview(top: list[dict], degraded: list[str]) -> dict:
             "reason": "",
         } for item in top],
         "degraded_sources": degraded,
+        "recommendation_intro": intro,
     }
+
+
+def _recommendation_history_update(state: AgentState, recommendation: dict, intro: str = "") -> list[dict]:
+    """把最终推荐按本轮 turn_id 追加，供历史会话逐轮恢复卡片。"""
+    if not recommendation.get("items") and not recommendation.get("summary"):
+        return []
+    turn_id = state.get("turn_id")
+    if turn_id and any(entry.get("turn_id") == turn_id for entry in state.get("recommendation_history", [])):
+        return []
+    return [{"turn_id": turn_id, "recommendation": recommendation, "intro": intro}]
+
+
+def _format_recommendation_intro(prefs: dict, count: int) -> str:
+    """生成推荐卡片前的结构化需求确认语句。"""
+    parts = []
+    for key in ("category", "gender", "color", "style", "material", "scene", "fit"):
+        value = prefs.get(key)
+        if value not in (None, "", []):
+            parts.append(str(value))
+    if prefs.get("budget") is not None:
+        budget = float(prefs["budget"])
+        budget_text = str(int(budget)) if budget.is_integer() else f"{budget:.2f}"
+        parts.append(f"预算 ¥{budget_text}")
+    if prefs.get("requirements"):
+        parts.append(str(prefs["requirements"]))
+    summary = " · ".join(parts) if parts else "当前需求"
+    return f"根据您的“{summary}”需求，为你推荐{count}款候选"
 
 
 def _stream_preview(preview: dict) -> None:
@@ -239,14 +267,17 @@ async def recommend_node(state: AgentState) -> dict:
             if budget is not None
             else "当前没有可推荐商品，请调整购物条件后再试。"
         )
-        return {
-            "recommendation": {
-                "summary": summary,
-                "items": [],
-                "degraded_sources": state.get("degraded_sources", []),
-            }
+        recommendation = {
+            "summary": summary,
+            "items": [],
+            "degraded_sources": state.get("degraded_sources", []),
         }
-    _stream_preview(build_recommendation_preview(top, state.get("degraded_sources", [])))
+        return {
+            "recommendation": recommendation,
+            "recommendation_history": _recommendation_history_update(state, recommendation),
+        }
+    intro = _format_recommendation_intro(prefs, len(top))
+    _stream_preview(build_recommendation_preview(top, state.get("degraded_sources", []), intro))
     user = build_user(prefs, top, state.get("degraded_sources", []), compact=True)
 
     structured = get_structured_llm(MAIN_MODEL, RecommendResult)
@@ -271,7 +302,13 @@ async def recommend_node(state: AgentState) -> dict:
             "url": item.get("url", ""),
             "reason": r.reason,                     # 文本取 LLM（挂属性，可溯源）
         })
-    return {"recommendation": {"summary": res.summary, "items": items, "degraded_sources": state.get("degraded_sources", [])}}
+    recommendation = {"summary": res.summary, "items": items, "degraded_sources": state.get("degraded_sources", [])}
+    intro = _format_recommendation_intro(prefs, len(items))
+    return {
+        "recommendation": recommendation,
+        "recommendation_intro": intro,
+        "recommendation_history": _recommendation_history_update(state, recommendation, intro),
+    }
 
 
 async def _recommend_with_evidence(state: AgentState) -> dict:
@@ -290,7 +327,11 @@ async def _recommend_with_evidence(state: AgentState) -> dict:
         if len(top) >= _TOP_N:
             break
     if not top:
-        return {"recommendation": {"summary": "当前没有预算内且价格可核验的商品。", "items": []}}
+        recommendation = {"summary": "当前没有预算内且价格可核验的商品。", "items": []}
+        return {
+            "recommendation": recommendation,
+            "recommendation_history": _recommendation_history_update(state, recommendation),
+        }
     evidence = state.get("product_evidence") or {}
     structured = get_structured_llm(MAIN_MODEL, ComparisonResult)
     prompt = f"偏好={_fmt_prefs(prefs)}\n候选={_build_evidence_items(top, evidence)}\n只可引用这些证据 ID：\n{_evidence_context(top, evidence)}"
@@ -313,14 +354,18 @@ async def _recommend_with_evidence(state: AgentState) -> dict:
             "reason": reason.get("reason", ""),
             "evidence_ids": reason.get("evidence_ids", []),
         })
+    recommendation = {
+        "summary": validated["summary"] if validated["best_sku_id"] else "当前证据不足以确定最优商品。" if not validated["dimensions"] else validated["summary"],
+        "best_sku_id": validated["best_sku_id"],
+        "dimensions": validated["dimensions"],
+        "items": items,
+        "degraded_sources": state.get("degraded_sources", []),
+    }
+    intro = _format_recommendation_intro(prefs, len(items))
     return {
-        "recommendation": {
-            "summary": validated["summary"] if validated["best_sku_id"] else "当前证据不足以确定最优商品。" if not validated["dimensions"] else validated["summary"],
-            "best_sku_id": validated["best_sku_id"],
-            "dimensions": validated["dimensions"],
-            "items": items,
-            "degraded_sources": state.get("degraded_sources", []),
-        },
+        "recommendation": recommendation,
+        "recommendation_intro": intro,
+        "recommendation_history": _recommendation_history_update(state, recommendation, intro),
         "comparison": validated,
         "order_intent_id": state.get("order_intent_id") or str(uuid.uuid4()),
     }

@@ -1,10 +1,9 @@
-"""会话历史服务：从 LangGraph checkpointer 读回会话（第一档：读最新状态）。
+"""会话历史服务：从 LangGraph checkpointer 读回会话与逐轮卡片。
 
 设计决策：
 - 会话列表以 conversations 表为准（每轮 /chat 都 ensure_conversation 登记，见 chat.py），
   标题/副标题从 checkpointer 的 messages[0] 与 preferences 反推，不额外建表建列；
-- 会话详情读 graph.aget_state 的最新快照：messages 全文 + 最新一轮结构化结果
-  （首档局限：checkpointer 只存最新 recommendation/order，多轮历史卡片不逐轮保留）；
+- 会话详情读 graph.aget_state 的最新快照：messages 全文 + 按 turn_id 追加的卡片历史；
 - langchain Message 对象不可 JSON 序列化，统一折成 {role, content}；
 - HITL 挂起时草稿在 snap.interrupts 载荷里（state 尚未提交 draft_order），需从载荷取回。
 """
@@ -37,6 +36,7 @@ def _serialize_messages(messages) -> list[dict]:
             "role": "user" if m.type == "human" else "assistant",
             "content": _text(m.content),
             "ts": (m.additional_kwargs or {}).get("ts"),
+            "turn_id": (m.additional_kwargs or {}).get("turn_id"),
         })
     return out
 
@@ -105,8 +105,11 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
         "memory_events": values.get("memory_events") or [],
         "normalized": values.get("normalized") or [],
         "recommendation": rec,
+        "recommendation_intro": values.get("recommendation_intro") or "",
+        "recommendation_history": values.get("recommendation_history") or [],
         "draft_order": draft,
         "order": values.get("order"),
+        "order_history": values.get("order_history") or [],
         "price_raised": bool(values.get("price_raised")),
         "awaiting_hitl": awaiting,
     }

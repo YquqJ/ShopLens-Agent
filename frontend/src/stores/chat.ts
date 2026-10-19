@@ -45,6 +45,7 @@ export interface Turn {
   preferences: Preferences | null
   normalized: NormalizedItem[]
   recommendation: Recommendation | null
+  recommendationIntro: string
   degradedSources: string[]
   draftOrder: DraftOrder | null
   order: OrderResult | null
@@ -114,11 +115,11 @@ function formatPreferences(prefs: Preferences | null): string {
   return parts.join(' · ')
 }
 
-function newTurn(user: string, ts?: number): Turn {
+function newTurn(user: string, ts?: number, id?: string): Turn {
   // 必须 reactive：sendMessage 手里攥着原始引用，后续 SSE 事件直接改它的字段，
   // 若为普通对象会绕过 Vue Proxy 的 set 陷阱 → 数据更新但组件不重渲染（spinner 卡死）。
   return reactive({
-    id: crypto.randomUUID(),
+    id: id ?? crypto.randomUUID(),
     user,
     ts: ts ?? Date.now(),
     clarifyQuestion: '',
@@ -127,6 +128,7 @@ function newTurn(user: string, ts?: number): Turn {
     preferences: null,
     normalized: [],
     recommendation: null,
+    recommendationIntro: '',
     degradedSources: [],
     draftOrder: null,
     order: null,
@@ -142,15 +144,16 @@ function newTurn(user: string, ts?: number): Turn {
 }
 
 function hydrateTurns(d: ConversationDetail): Turn[] {
-  // 第一档重建：messages 按「user 开新轮」切分，assistant 文本入 clarifyQuestion/agentReply，
-  // 最新一轮补挂 checkpointer 的最新结构化结果（推荐/草稿/订单，多轮历史卡片不逐轮保留）。
+  // messages 按「user 开新轮」切分，结构化卡片随后按 turn_id 逐轮挂回。
   const turns: Turn[] = []
+  const turnsById = new Map<string, Turn>()
   let cur: Turn | null = null
   for (const m of d.messages) {
     if (m.role === 'user') {
-      cur = newTurn(m.content, m.ts != null ? m.ts * 1000 : undefined)
+      cur = newTurn(m.content, m.ts != null ? m.ts * 1000 : undefined, m.turn_id)
       cur.streaming = false
       turns.push(cur)
+      turnsById.set(cur.id, cur)
     } else if (cur) {
       const q = m.content
       if (q.endsWith('？') || q.endsWith('?')) cur.clarifyQuestion = q
@@ -172,20 +175,36 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
   const last = turns.at(-1)
   if (last) {
     last.preferences = d.preferences && Object.keys(d.preferences).length ? d.preferences : null
-    // 末轮已成交（placed/cancelled）：不还原候选卡，改由 messages 里的「已下单/未下单」摘要原位替位
+    last.normalized = d.normalized ?? []
     const resolved = d.order?.status === 'placed' || d.order?.status === 'cancelled'
-    if (!resolved) {
-      last.normalized = d.normalized ?? []
-      last.recommendation = d.recommendation?.summary || d.recommendation?.items?.length
-        ? d.recommendation
-        : null
-      last.degradedSources = d.recommendation?.degraded_sources ?? []
-      last.draftOrder = d.draft_order
-      last.order = d.order
-      last.priceRaised = d.price_raised
-      last.awaitingHitl = d.awaiting_hitl
-      last.impressed = !!d.recommendation
-    }
+    last.draftOrder = resolved ? null : d.draft_order
+    last.priceRaised = d.price_raised
+    last.awaitingHitl = resolved ? false : d.awaiting_hitl
+  }
+
+  for (const entry of d.recommendation_history ?? []) {
+    const turn = turnsById.get(entry.turn_id)
+    if (!turn || !entry.recommendation) continue
+    turn.recommendation = entry.recommendation
+    turn.recommendationIntro = entry.intro ?? ''
+    turn.degradedSources = entry.recommendation.degraded_sources ?? []
+    turn.impressed = true
+  }
+  for (const entry of d.order_history ?? []) {
+    const turn = turnsById.get(entry.turn_id)
+    if (!turn || !entry.order) continue
+    turn.order = entry.order
+  }
+
+  // 兼容旧 checkpoint：旧数据没有逐轮 history，只能把最新结果挂到最后一轮。
+  if (last && !(d.recommendation_history?.length)) {
+    last.recommendation = d.recommendation?.summary || d.recommendation?.items?.length ? d.recommendation : null
+    last.recommendationIntro = d.recommendation_intro ?? ''
+    last.degradedSources = d.recommendation?.degraded_sources ?? []
+    last.impressed = !!d.recommendation
+  }
+  if (last && !(d.order_history?.length)) {
+    last.order = d.order
   }
   return turns
 }
@@ -423,6 +442,7 @@ export const useChatStore = defineStore('chat', {
         }
         case 'recommend': {
           turn.recommendation = (data.recommendation as Recommendation) ?? null
+          turn.recommendationIntro = String(data.recommendation_intro ?? '')
           const top = turn.recommendation?.items[0]
           if (!turn.impressed && top) {
             turn.impressed = true
@@ -436,6 +456,7 @@ export const useChatStore = defineStore('chat', {
     },
     handleRecommendationPreview(session: Session, turn: Turn, data: Record<string, unknown>): void {
       turn.recommendation = (data.recommendation as Recommendation) ?? null
+      turn.recommendationIntro = String(data.recommendation_intro ?? '')
       const top = turn.recommendation?.items[0]
       if (!turn.impressed && top) {
         turn.impressed = true
@@ -456,15 +477,13 @@ export const useChatStore = defineStore('chat', {
       turn.order = (data as OrderResult) ?? null
       turn.streaming = false
       turn.awaitingHitl = false
-      // 下单完成/取消：用摘要替位候选卡（「已下单 xx · ¥xx」/「未下单」），与后端回写 messages 文案一致
+      // 下单完成/取消：保留推荐卡，同时追加摘要与订单卡，保证本轮交易结果可追溯
       if (turn.order?.status === 'placed') {
         turn.agentReply = orderSummary(turn)
-        turn.recommendation = null
         turn.draftOrder = null
         turn.contextReset = true
       } else if (turn.order?.status === 'cancelled') {
         turn.agentReply = MOCK_CANCEL_REPLY
-        turn.recommendation = null
         turn.draftOrder = null
         turn.contextReset = true
       }

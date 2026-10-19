@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.agents.nodes import place_order
 from app.services import order as order_service
 
 
@@ -117,6 +118,28 @@ async def test_place_order_is_idempotent_for_same_intent(monkeypatch):
     assert result["order_id"] == 99
     assert result["status"] == "placed"
     assert order_session.added == []
+
+
+@pytest.mark.anyio
+async def test_place_order_node_appends_order_history_for_current_turn(monkeypatch):
+    placed = {"status": "placed", "order_id": 42, "final_price": 299}
+
+    async def fake_place_order(*_args, **_kwargs):
+        return placed
+
+    monkeypatch.setattr(place_order.order_service, "place_order", fake_place_order)
+
+    result = await place_order.place_order_node(
+        {
+            "turn_id": "turn-1",
+            "draft_order": {"title": "黑色外套", "final_price": 299, "platform": "jd", "sku_id": "SKU1"},
+            "recommendation": {"items": [{"sku_id": "SKU1"}]},
+            "order_history": [],
+        },
+        {"configurable": {"thread_id": "thread-1", "profile_id": "profile-1"}},
+    )
+
+    assert result["order_history"] == [{"turn_id": "turn-1", "order": placed}]
 
 
 def test_order_number_uses_minute_timestamp_and_three_random_digits(monkeypatch):

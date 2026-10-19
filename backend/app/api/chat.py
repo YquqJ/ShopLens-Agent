@@ -120,6 +120,7 @@ async def _stream(
                 if isinstance(event, dict) and event.get("event") == "recommendation_preview":
                     yield _sse("recommendation_preview", {
                         "recommendation": event.get("recommendation", {}),
+                        "recommendation_intro": event.get("recommendation_intro", ""),
                     })
                 continue
             if mode != "updates" or not isinstance(event, dict):
