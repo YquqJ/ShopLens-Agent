@@ -54,15 +54,56 @@ def _resolve_selection(normalized: list[dict], decision: dict) -> dict | None:
     return _build_draft(item)
 
 
+def _real_quote(candidate: dict) -> dict:
+    price = candidate.get("page_price")
+    return {
+        "platform": candidate.get("mall") or "值得买",
+        "price": price,
+        "discount": 0,
+        "shipping_fee": 0,
+        "eta_days": 0,
+        "final_price": price,
+    }
+
+
+def _real_item(candidate: dict) -> dict:
+    return {
+        "sku_id": candidate["sku_id"],
+        "title": candidate.get("title") or "",
+        "url": candidate.get("url") or "",
+        "catalog_price": candidate.get("catalog_price") or candidate.get("page_price"),
+        "best": _real_quote(candidate),
+    }
+
+
+def _build_real_draft(candidates: list[dict], recommendation: dict, decision: dict | None = None) -> dict | None:
+    items = {candidate.get("sku_id"): _real_item(candidate) for candidate in candidates}
+    recommended = recommendation.get("items") if isinstance(recommendation, dict) else []
+    allowed = {item.get("sku_id") for item in recommended if isinstance(item, dict)}
+    sku_id = (decision or {}).get("sku_id") or recommendation.get("best_sku_id") if isinstance(recommendation, dict) else None
+    if not sku_id and recommended:
+        sku_id = recommended[0].get("sku_id")
+    if sku_id not in allowed or sku_id not in items:
+        return None
+    return _draft(items[sku_id], items[sku_id]["best"])
+
+
 async def confirm_node(state: AgentState) -> dict:
     normalized = state.get("normalized", [])
-    if not normalized:
+    candidates = state.get("candidates", [])
+    recommendation = state.get("recommendation") or {}
+    real_mode = bool(candidates and not normalized and recommendation.get("items"))
+    if not normalized and not real_mode:
         return {"draft_order": None, "order": {"status": "skipped"}}
     re_confirm = state.get("lock_attempts", 0) > 0 and bool(state.get("draft_order"))
     if re_confirm:
         draft = state["draft_order"]          # 涨价重确认：用锁价后的最新价
     else:
-        draft = _build_draft(normalized[0])    # 默认：归一后最优解第一条
+        draft = (_build_real_draft(candidates, recommendation)
+                 if real_mode else _build_draft(normalized[0]))
+
+    if draft is None:
+        return {"draft_order": None, "order": {"status": "invalid_selection"}}
 
     decision = interrupt({"type": "confirm_order", "draft_order": draft})
     confirm = decision.get("confirm") if isinstance(decision, dict) else bool(decision)
@@ -76,7 +117,11 @@ async def confirm_node(state: AgentState) -> dict:
     # 方案 B：仅首轮确认应用「候选/平台选择」，重确认保留锁定价
     if not re_confirm and isinstance(decision, dict):
         has_selection = bool(decision.get("sku_id") or decision.get("platform"))
-        selected = _resolve_selection(normalized, decision) if has_selection else draft
+        selected = (
+            _build_real_draft(candidates, recommendation, decision)
+            if real_mode and has_selection
+            else _resolve_selection(normalized, decision) if has_selection else draft
+        )
         if selected is None:
             return {
                 "draft_order": None,

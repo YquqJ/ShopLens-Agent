@@ -38,10 +38,9 @@ const bySku = computed<Record<string, NormalizedItem>>(() => {
 
 const degradedList = computed(() => props.turn.degradedSources)
 
-// HITL 候选选择：默认不选中——最推荐那条只打「推荐」标记，用户点卡片才算「点击查看」并选中
+// HITL 候选选择：用户点卡片后才允许确认下单
 const selectedSkuId = ref('')
 const selectedPlatform = ref('')
-const realActionPending = ref(false)
 const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value))
 // 比价表/理由区展示对象：点选哪个候选就跟到哪个，未选中默认回落到推荐品 item[0]
 const activeItem = computed(() => selectedItem.value ?? rec.value.items[0])
@@ -52,13 +51,7 @@ const selectedQuote = computed<Quote | null>(
   () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
 )
 const isRealSource = computed(() => rec.value.items.some((item) => Boolean(item.url)))
-
 function selectSku(item: RecommendItem): void {
-  if (isRealSource.value) {
-    selectedSkuId.value = item.sku_id
-    store.trackClick(item.sku_id, props.turn.id)
-    return
-  }
   const skuId = item.sku_id
   // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
   if (selectedSkuId.value === skuId) return
@@ -68,28 +61,7 @@ function selectSku(item: RecommendItem): void {
 }
 
 function hasImage(item: RecommendItem): boolean {
-  return isRealSource.value && Boolean(item.image_url)
-}
-
-async function confirmReal(): Promise<void> {
-  const item = selectedItem.value
-  if (!item?.url || realActionPending.value) return
-  realActionPending.value = true
-  try {
-    await store.selectRealProduct(props.turn.id, item)
-  } finally {
-    realActionPending.value = false
-  }
-}
-
-async function cancelReal(): Promise<void> {
-  if (realActionPending.value) return
-  realActionPending.value = true
-  try {
-    await store.cancelRealProduct(props.turn.id)
-  } finally {
-    realActionPending.value = false
-  }
+  return Boolean(item.image_url)
 }
 
 interface HitlSummary {
@@ -114,6 +86,7 @@ const summary = computed<HitlSummary | null>(() => {
   const q = selectedQuote.value
   const it = selectedItem.value
   if (q && it) return { title: it.title, platform: q.platform, final_price: q.final_price, eta_days: q.eta_days }
+  if (it) return { title: it.title, platform: it.platform, final_price: it.final_price, eta_days: 0 }
   return null
 })
 
@@ -179,7 +152,7 @@ async function cancel(): Promise<void> {
     </div>
 
     <!-- 最优候选多平台比价表 -->
-    <div v-if="activeNormalized && !!selectedSkuId" style="padding:0 20px">
+    <div v-if="!isRealSource && activeNormalized && !!selectedSkuId" style="padding:0 20px">
       <div class="cmp">
         <div class="cmp-heading">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
@@ -224,21 +197,12 @@ async function cancel(): Promise<void> {
     <div v-if="activeItem && !!selectedSkuId" class="reason" style="margin:0 20px">
       <h5>{{ activeItem.title }} 推荐理由 · 可溯源</h5>
       <div class="reason-item"><span class="src">理由</span>{{ activeItem.reason }}</div>
-      <div v-if="activeNormalized" class="reason-item">
+      <div v-if="activeNormalized && !isRealSource" class="reason-item">
         <span class="src">出处</span>
         {{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}，综合成本 {{ fmt(activeNormalized.best.total_cost) }}
       </div>
-    </div>
-
-    <!-- 真实源商品选择确认：确认后在对话中展示链接，取消则结束本轮推荐 -->
-    <div v-if="isRealSource" class="hitl">
-      <h3>商品选择确认</h3>
-      <p>选中商品后确认选择，商品链接会显示在对话中。</p>
-      <div class="btn-row">
-        <button class="btn btn-primary" :disabled="realActionPending || !selectedSkuId" @click="confirmReal">
-          {{ realActionPending ? '处理中…' : '确认' }}
-        </button>
-        <button class="btn btn-ghost" :disabled="realActionPending" @click="cancelReal">取消</button>
+      <div v-if="activeItem.evidence_ids?.length" class="reason-item">
+        <span class="src">证据</span>{{ activeItem.evidence_ids.join('、') }}
       </div>
     </div>
 
@@ -248,7 +212,7 @@ async function cancel(): Promise<void> {
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
         下单确认 · 人工确认（HITL）
       </h3>
-      <p>点击上方任一候选卡片选中商品，下单前会二次询价锁定价格。</p>
+      <p>点击上方任一候选卡片选中商品，确认后生成模拟订单。</p>
       <div v-if="!turn.priceRaised && !selectedSkuId" class="select-hint">👆 请先点选一款候选商品，再确认下单</div>
 
       <div v-if="summary" class="order-summary">
@@ -265,7 +229,6 @@ async function cancel(): Promise<void> {
           </span>
         </div>
       </div>
-      <div v-if="turn.priceRaised && turn.order?.status !== 'placed'" class="lock-note show">二次询价发现价格变动，请确认最新到手价后再下单。</div>
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
       <div v-if="turn.order?.status !== 'placed'" class="btn-row">
         <button class="btn btn-primary" :disabled="turn.streaming || (!turn.priceRaised && !selectedSkuId)" @click="confirm">{{ turn.streaming ? '二次询价中…' : '确认下单' }}</button>

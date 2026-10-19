@@ -6,7 +6,6 @@ import { reactive } from 'vue'
 import { defineStore } from 'pinia'
 import {
   chatStream,
-  cancelProduct,
   deleteConversation,
   fetchConversation,
   fetchConversations,
@@ -14,7 +13,6 @@ import {
   fetchSourceModes,
   recordEvent,
   resumeStream,
-  selectProduct,
 } from '../api/client'
 import type {
   ConversationDetail,
@@ -25,7 +23,6 @@ import type {
   Preferences,
   ProfilePreferences,
   Recommendation,
-  RecommendItem,
   SSEEvent,
   SourceMode,
   SourceModes,
@@ -73,11 +70,9 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
   clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
   route: { label: '意图路由', desc: '判断购物 / 记忆 / 取消 / 其他' },
   retrieve: { label: '商品检索', desc: '召回候选商品' },
-  compare: { label: '多源比价', desc: '并发调用 3 个 MCP 比价源' },
-  normalize: { label: 'SKU 归一 + 最优解', desc: '三源报价对齐 + 综合成本最优' },
+  enrich_knowledge: { label: '知识图谱增强', desc: '补充实体属性并建立商品证据' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
   confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
-  lock_price: { label: '二次询价锁价', desc: '下单前重新报价锁定价格' },
   place_order: { label: '下单落库', desc: '订单写入 PostgreSQL' },
   load_memory: { label: '读取偏好记忆', desc: '读取已授权的跨会话偏好' },
   capture_memory: { label: '更新偏好记忆', desc: '仅处理用户明确授权的偏好变更' },
@@ -241,8 +236,8 @@ export const useChatStore = defineStore('chat', {
       loadedIds: [] as string[],
       profilePreferences: {} as ProfilePreferences,
       memoryEvents: [] as MemoryEvent[],
-      sourceMode: 'mock' as SourceMode,
-      sourceModes: { mock: true, real: false } as SourceModes,
+      sourceMode: 'real' as SourceMode,
+      sourceModes: { mock: false, real: true } as SourceModes,
     }
   },
   getters: {
@@ -312,7 +307,7 @@ export const useChatStore = defineStore('chat', {
       try {
         const modes = await fetchSourceModes()
         this.sourceModes = modes
-        if (!modes[this.sourceMode]) this.sourceMode = 'mock'
+        if (!modes[this.sourceMode]) this.sourceMode = modes.real ? 'real' : 'mock'
       } catch (e) {
         console.error('数据源模式加载失败', e)
       }
@@ -364,44 +359,6 @@ export const useChatStore = defineStore('chat', {
       // 漏斗「点击推荐」只统计点击👍推荐品，备选点击不计数
       if (skuId !== turn.recommendation?.items[0]?.sku_id) return
       void recordEvent(this.activeId, 'click', skuId)
-    },
-    async selectRealProduct(turnId: string, item: Pick<RecommendItem, 'sku_id' | 'title' | 'url'>): Promise<boolean> {
-      const turn = this.activeSession.turns.find((t) => t.id === turnId)
-      if (!turn || !item.url) return false
-      this.trackClick(item.sku_id, turnId)
-      try {
-        await selectProduct(this.activeId, {
-          sku_id: item.sku_id,
-          title: item.title,
-          url: item.url,
-        })
-      } catch (e) {
-        turn.error = e instanceof Error ? e.message : String(e)
-        return false
-      }
-      turn.agentReply = `已选择「${item.title}」`
-      turn.agentReplyUrl = item.url
-      turn.recommendation = null
-      turn.normalized = []
-      turn.streaming = false
-      turn.contextReset = true
-      return true
-    },
-    async cancelRealProduct(turnId: string): Promise<boolean> {
-      const turn = this.activeSession.turns.find((t) => t.id === turnId)
-      if (!turn) return false
-      try {
-        await cancelProduct(this.activeId)
-      } catch (e) {
-        turn.error = e instanceof Error ? e.message : String(e)
-        return false
-      }
-      turn.agentReply = REAL_CANCEL_REPLY
-      turn.agentReplyUrl = ''
-      turn.recommendation = null
-      turn.normalized = []
-      turn.streaming = false
-      return true
     },
     async run(turn: Turn, stream: () => Promise<void>): Promise<void> {
       try {
@@ -460,12 +417,8 @@ export const useChatStore = defineStore('chat', {
           pushTrace(turn, 'retrieve', 'done', detail)
           break
         }
-        case 'compare': {
-          turn.degradedSources = (data.degraded_sources as string[]) ?? []
-          break
-        }
-        case 'normalize': {
-          turn.normalized = (data.normalized as NormalizedItem[]) ?? []
+        case 'enrich_knowledge': {
+          pushTrace(turn, 'enrich_knowledge', 'done')
           break
         }
         case 'recommend': {
@@ -475,10 +428,6 @@ export const useChatStore = defineStore('chat', {
             turn.impressed = true
             void recordEvent(session.id, 'impression', top?.sku_id)
           }
-          break
-        }
-        case 'lock_price': {
-          if (data.price_raised) turn.priceRaised = true
           break
         }
         default:

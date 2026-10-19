@@ -67,17 +67,26 @@ export interface RecommendItem {
   image_url?: string
   url?: string
   reason: string
+  evidence_ids?: string[]
 }
 
 export interface Recommendation {
   summary: string
   items: RecommendItem[]
   degraded_sources: string[]
+  best_sku_id?: string | null
+  dimensions?: Array<{
+    field: string
+    evidence_by_sku: Record<string, string>
+    values?: Record<string, unknown>
+  }>
 }
 
 export interface DraftOrder {
   sku_id: string
   title: string
+  url?: string
+  catalog_price?: number | null
   platform: string
   price: number
   discount: number
@@ -94,6 +103,9 @@ export interface OrderResult {
   platform?: string
   final_price?: number
   status?: string
+  order_intent_id?: string
+  title?: string
+  url?: string | null
 }
 
 export interface FunnelOrder {

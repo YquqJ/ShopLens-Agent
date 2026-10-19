@@ -84,7 +84,7 @@ export function chatStream(
   threadId: string,
   message: string,
   onEvent: (ev: SSEEvent) => void,
-  sourceMode: SourceMode = 'mock',
+  sourceMode: SourceMode = 'real',
 ): Promise<void> {
   return postSSE('/api/chat', {
     message,
