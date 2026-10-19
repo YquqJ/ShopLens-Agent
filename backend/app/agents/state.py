@@ -54,6 +54,8 @@ class AgentState(TypedDict):
     reply: str                 # M8：route 非导购兜底回复（独立序列化字段）
     candidates: list[dict]
     product_evidence: dict[str, list[dict]]
+    kg_status: dict[str, str]
+    kg_metadata: dict[str, dict]
     zdm_mode: bool             # 方案 B：真实源（值海纳）模式，检索后直连推荐，跳过比价/下单闭环
     quotes: list[dict]
     normalized: list[dict]
@@ -81,6 +83,8 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "reply": "",
         "candidates": [],
         "product_evidence": {},
+        "kg_status": {},
+        "kg_metadata": {},
         "zdm_mode": False,
         "quotes": [],
         "normalized": [],

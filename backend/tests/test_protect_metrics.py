@@ -15,7 +15,7 @@ class FlakyTool:
     async def ainvoke(self, *args, **kwargs):
         self.calls += 1
         if self.calls <= self.failures:
-            raise RuntimeError("temporary source error")
+            raise ConnectionError("temporary source error")
         return {"price": 10}
 
 
@@ -115,3 +115,20 @@ def test_half_open_probe_failure_reopens_breaker(monkeypatch) -> None:
 
     assert breaker.state.value == "open"
     assert breaker.transition_counts["half_open_to_open"] == 1
+
+
+def test_product_and_knowledge_graph_tools_use_separate_breakers() -> None:
+    class _Tool:
+        def __init__(self, name, description):
+            self.name = name
+            self.description = description
+
+    registry = SourceRegistry()
+    tools = registry.protect({
+        "haina_product_search_pro": _Tool("haina_product_search_pro", "Search products"),
+        "haina_knowledge_graph_search": _Tool("haina_knowledge_graph_search", "Search knowledge graph"),
+    })
+
+    assert tools["haina_product_search_pro"].source == "haina_product"
+    assert tools["haina_knowledge_graph_search"].source == "haina_kg"
+    assert registry.breaker("haina_product") is not registry.breaker("haina_kg")

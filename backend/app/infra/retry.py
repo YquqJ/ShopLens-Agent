@@ -10,13 +10,27 @@ from collections.abc import Callable
 
 from tenacity import (
     AsyncRetrying,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential_jitter,
 )
 
-# 默认可重试 = 任意异常（MCP 源下游瞬时故障统一按可重试处理）
-_DEFAULT_RETRYABLE = retry_if_exception_type(Exception)
+
+def _is_transient_failure(error: BaseException) -> bool:
+    """Retry network failures and HTTP throttling/server errors, not bad requests."""
+    if isinstance(error, (TimeoutError, ConnectionError, OSError)):
+        return True
+
+    response = getattr(error, "response", None)
+    status_code = getattr(error, "status_code", None) or getattr(response, "status_code", None)
+    if status_code == 429 or (isinstance(status_code, int) and 500 <= status_code < 600):
+        return True
+
+    error_name = type(error).__name__.lower()
+    return any(marker in error_name for marker in (
+        "timeout", "connecterror", "networkerror", "readerror", "writeerror",
+        "remoteprotocolerror",
+    ))
 
 
 async def call_with_retry(
@@ -39,7 +53,7 @@ async def call_with_retry(
     retryer = AsyncRetrying(
         stop=stop_after_attempt(attempts),
         wait=wait_exponential_jitter(initial=base_seconds, max=max_seconds),
-        retry=_DEFAULT_RETRYABLE,
+        retry=retry_if_exception(_is_transient_failure),
         reraise=True,
         before_sleep=before_sleep,
     )

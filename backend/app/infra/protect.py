@@ -21,8 +21,17 @@ class SourceError(Exception):
         super().__init__(f"[{source}] {reason}")
 
 
-def source_of(tool_name: str) -> str:
-    """工具名 → 源名：price_jd_get_quote → jd；coupon_* → coupon；logistics_* → logistics。"""
+def source_of(tool_name: str, description: str = "") -> str:
+    """Map tools to isolated source breakers, including separate Haina workloads."""
+    lowered = f"{tool_name} {description}".lower()
+    if "haina" in lowered or "zhidemai" in lowered:
+        if any(marker in lowered for marker in (
+            "knowledge graph", "knowledge_graph", "knowledge-graph", "entity", "实体", "知识图谱", " kg ", "_kg_",
+        )):
+            return "haina_kg"
+        if any(marker in lowered for marker in ("product", "商品", "产品")):
+            return "haina_product"
+        return "haina_unknown"
     if tool_name.startswith("price_"):
         return tool_name.split("_")[1]
     return tool_name.split("_")[0]
@@ -34,6 +43,9 @@ class ProtectedTool:
         self.source = source
         self._registry = registry
         self.name = getattr(inner, "name", None)
+        self.description = getattr(inner, "description", "")
+        self.args = getattr(inner, "args", {})
+        self.args_schema = getattr(inner, "args_schema", None)
 
     async def ainvoke(self, *args, **kwargs):
         self._registry.record_logical_call(self.source)
@@ -113,7 +125,7 @@ class SourceRegistry:
     def protect(self, tools: dict) -> dict:
         """给一批 name→工具 套保护包装，返回 name→ProtectedTool。"""
         return {
-            name: ProtectedTool(tool, source_of(name), self)
+            name: ProtectedTool(tool, source_of(name, getattr(tool, "description", "")), self)
             for name, tool in tools.items()
         }
 
