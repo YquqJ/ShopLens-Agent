@@ -80,7 +80,11 @@ def _build_real_draft(candidates: list[dict], recommendation: dict, decision: di
     items = {candidate.get("sku_id"): _real_item(candidate) for candidate in candidates}
     recommended = recommendation.get("items") if isinstance(recommendation, dict) else []
     allowed = {item.get("sku_id") for item in recommended if isinstance(item, dict)}
-    sku_id = (decision or {}).get("sku_id") or recommendation.get("best_sku_id") if isinstance(recommendation, dict) else None
+    sku_id = None
+    if isinstance(decision, dict):
+        sku_id = decision.get("sku_id")
+    if not sku_id and isinstance(recommendation, dict):
+        sku_id = recommendation.get("best_sku_id")
     if not sku_id and recommended:
         sku_id = recommended[0].get("sku_id")
     if sku_id not in allowed or sku_id not in items:

@@ -9,6 +9,7 @@
 """
 from datetime import datetime
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
@@ -102,7 +103,9 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    order_intent_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    order_intent_id: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, default=lambda: str(uuid4())
+    )
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     sku_id: Mapped[str] = mapped_column(String(64))
