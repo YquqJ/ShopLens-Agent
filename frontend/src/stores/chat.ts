@@ -166,9 +166,8 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
           cur.agentReply = q
         }
         cur.contextReset = true
-      } else if (q === '未选择推荐商品' || q === REAL_CANCEL_REPLY || q === MOCK_CANCEL_REPLY || q.startsWith('已下单「') || q === '未下单') {
+      } else if (q === '未选择推荐商品' || q === REAL_CANCEL_REPLY) {
         cur.agentReply = q
-        cur.contextReset = q === MOCK_CANCEL_REPLY || q.startsWith('已下单「') || q === '未下单'
       } else cur.agentReply = q
     }
   }
@@ -222,24 +221,7 @@ function pushTrace(turn: Turn, name: string, status: TraceNode['status'], extra?
   turn.trace.push({ name, label: meta.label, desc, status })
 }
 
-// 金额展示：整元不带小数（与后端 place_order 回写 messages 的摘要文案一致）
-function fmtYuan(v: number | null | undefined): string {
-  if (v == null) return ''
-  return Number.isInteger(v) ? String(v) : v.toFixed(2)
-}
-
-// 平台展示名（与后端 place_order 回写 messages 的摘要文案保持一致）
-const PLATFORM_NAME: Record<string, string> = { jd: '京东', taobao: '淘宝', pdd: '拼多多', master: '主库兜底' }
 const REAL_CANCEL_REPLY = '好的，已取消本次商品选择。你可以继续说明购物需求，也可以说“退出导购”结束本轮。'
-const MOCK_CANCEL_REPLY = '好的，已取消本次下单。你可以继续说明购物需求，也可以说“退出导购”结束本轮。'
-
-// 下单完成摘要文本：候选卡用「已下单 xx · ¥xx · 平台」替位
-function orderSummary(turn: Turn): string {
-  const title = turn.draftOrder?.title ?? ''
-  const price = fmtYuan(turn.order?.final_price ?? turn.draftOrder?.final_price)
-  const platform = turn.order?.platform ?? turn.draftOrder?.platform
-  return `已下单「${title}」· ¥${price}${platform ? ` · ${PLATFORM_NAME[platform] ?? platform}` : ''}`
-}
 
 export const useChatStore = defineStore('chat', {
   state: () => {
@@ -477,13 +459,11 @@ export const useChatStore = defineStore('chat', {
       turn.order = (data as OrderResult) ?? null
       turn.streaming = false
       turn.awaitingHitl = false
-      // 下单完成/取消：保留推荐卡，同时追加摘要与订单卡，保证本轮交易结果可追溯
+      // 下单完成/取消：保留推荐卡；成交结果由订单卡承载，不额外插入 AI 气泡。
       if (turn.order?.status === 'placed') {
-        turn.agentReply = orderSummary(turn)
         turn.draftOrder = null
         turn.contextReset = true
       } else if (turn.order?.status === 'cancelled') {
-        turn.agentReply = MOCK_CANCEL_REPLY
         turn.draftOrder = null
         turn.contextReset = true
       }

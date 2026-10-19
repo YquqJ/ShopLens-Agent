@@ -5,7 +5,7 @@ from app.agents.nodes import confirm
 
 
 @pytest.mark.anyio
-async def test_confirm_cancel_message_guides_next_action(monkeypatch):
+async def test_confirm_cancel_does_not_append_a_duplicate_chat_message(monkeypatch):
     monkeypatch.setattr(confirm, "interrupt", lambda _payload: {"confirm": False})
 
     result = await confirm.confirm_node({
@@ -25,9 +25,12 @@ async def test_confirm_cancel_message_guides_next_action(monkeypatch):
         "draft_order": None,
     })
 
-    assert result["messages"][0].content == (
-        "好的，已取消本次下单。你可以继续说明购物需求，也可以说“退出导购”结束本轮。"
-    )
+    assert result["order"] == {"status": "cancelled"}
+    assert "messages" not in result
+    assert result["order_history"] == [{
+        "turn_id": None,
+        "order": {"status": "cancelled"},
+    }]
 
 
 @pytest.mark.anyio

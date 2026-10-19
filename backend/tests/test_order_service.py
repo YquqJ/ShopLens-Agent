@@ -140,6 +140,7 @@ async def test_place_order_node_appends_order_history_for_current_turn(monkeypat
     )
 
     assert result["order_history"] == [{"turn_id": "turn-1", "order": placed}]
+    assert "messages" not in result
 
 
 def test_order_number_uses_minute_timestamp_and_three_random_digits(monkeypatch):

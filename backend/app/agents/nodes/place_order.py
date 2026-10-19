@@ -1,20 +1,8 @@
-"""下单节点：最终锁价后落库生成订单，并把「已下单」摘要写进对话消息（供会话历史还原）。"""
-from langchain_core.messages import AIMessage
+"""下单节点：最终锁价后落库生成订单，并追加可恢复的订单卡片记录。"""
 from langchain_core.runnables import RunnableConfig
 
 from app.agents.state import AgentState
 from app.services import order as order_service
-
-
-def _fmt_price(v) -> str:
-    """金额格式：整元不带小数，否则保留两位（与前端下线摘要文案保持一致）。"""
-    if v is None:
-        return ""
-    f = float(v)
-    return str(int(f)) if f.is_integer() else f"{f:.2f}"
-
-
-_PLATFORM_NAMES = {"jd": "京东", "taobao": "淘宝", "pdd": "拼多多", "master": "主库兜底"}
 
 
 async def place_order_node(state: AgentState, config: RunnableConfig) -> dict:
@@ -34,9 +22,6 @@ async def place_order_node(state: AgentState, config: RunnableConfig) -> dict:
         is_recommended=is_recommended,
         order_intent_id=state.get("order_intent_id"),
     )
-    # 下单成功摘要回写 messages：checkpointer 累加保存，切会话回来据此在原位还原「已下单」
-    platform = draft.get("platform") or ""
-    summary = f"已下单「{draft['title']}」· ¥{_fmt_price(draft['final_price'])} · {_PLATFORM_NAMES.get(platform, platform)}"
     order_id = order.get("order_id") if isinstance(order, dict) else None
     already_recorded = any(
         entry.get("turn_id") == state.get("turn_id")
@@ -46,5 +31,4 @@ async def place_order_node(state: AgentState, config: RunnableConfig) -> dict:
     return {
         "order": order,
         "order_history": [] if already_recorded else [{"turn_id": state.get("turn_id"), "order": order}],
-        "messages": [AIMessage(summary)],
     }

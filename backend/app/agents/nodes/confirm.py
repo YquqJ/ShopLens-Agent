@@ -12,7 +12,6 @@ from langgraph.types import interrupt
 from app.agents.state import AgentState
 
 
-_CANCEL_ORDER_REPLY = "好的，已取消本次下单。你可以继续说明购物需求，也可以说“退出导购”结束本轮。"
 _INVALID_SELECTION_REPLY = "你选择的商品不在当前推荐结果中，本次下单已停止，请重新发起导购。"
 
 
@@ -114,11 +113,13 @@ async def confirm_node(state: AgentState) -> dict:
     decision = interrupt({"type": "confirm_order", "draft_order": draft})
     confirm = decision.get("confirm") if isinstance(decision, dict) else bool(decision)
     if not confirm:
-        # 取消下单：回写可继续购物或退出导购的提示，会话历史还原时原地展示
         return {
             "draft_order": None,
             "order": {"status": "cancelled"},
-            "messages": [AIMessage(_CANCEL_ORDER_REPLY)],
+            "order_history": [{
+                "turn_id": state.get("turn_id"),
+                "order": {"status": "cancelled"},
+            }],
         }
     # 方案 B：仅首轮确认应用「候选/平台选择」，重确认保留锁定价
     if not re_confirm and isinstance(decision, dict):

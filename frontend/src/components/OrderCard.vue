@@ -24,7 +24,7 @@ function formatPrice(value?: number): string {
     <div class="order-card-head">
       <div>
         <div class="order-card-kicker">模拟订单 · 已下单</div>
-        <h3>订单 {{ props.order.order_number || `#${props.order.order_id ?? '—'}` }}</h3>
+        <h3>订单号： {{ props.order.order_number || `#${props.order.order_id ?? '—'}` }}</h3>
       </div>
       <span class="order-status">已确认</span>
     </div>
