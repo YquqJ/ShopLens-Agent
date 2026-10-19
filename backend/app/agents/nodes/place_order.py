@@ -32,6 +32,7 @@ async def place_order_node(state: AgentState, config: RunnableConfig) -> dict:
         thread_id,
         profile_key,
         is_recommended=is_recommended,
+        order_intent_id=state.get("order_intent_id"),
     )
     # 下单成功摘要回写 messages：checkpointer 累加保存，切会话回来据此在原位还原「已下单」
     platform = draft.get("platform") or ""

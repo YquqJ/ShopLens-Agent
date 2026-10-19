@@ -1,10 +1,7 @@
 """检索节点：按偏好召回候选商品。
 
-两条路径（由请求级 source_mode 选择）：
-- 默认：Chroma 向量检索（店铺种子目录）；
-- 值海纳模式：通过 zhidemai MCP 工具召回真实商品（方案 B），
-  直接把真实报价构造为 normalized 结构，供 recommend 直接消费——
-  跳过 compare/normalize（真实源无跨平台 sku 对齐，且不可喂仿真比价源，否则价格现编）。
+真实导购路径通过值得买 MCP 召回商品，并保留 normalized 兼容结构；
+随后由知识图谱节点增强证据，推荐节点只基于服务端事实做比较。
 """
 import json
 import math

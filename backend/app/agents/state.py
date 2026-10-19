@@ -3,8 +3,8 @@
 字段职责：
 - messages：对话全量（add reducer 累加），澄清反问/推荐语都往里写；
 - preferences：clarify 提取的结构化偏好（品类/预算/风格/材质/场景）；
-- candidates → quotes → normalized → recommendation：链路产物，逐步传递；
-- draft_order / order：M4 下单闭环用，M3 先占位；
+- candidates → product_evidence → comparison → recommendation：真实商品事实链路产物；
+- draft_order / order：确认式模拟下单闭环；
 - hop_count：多轮澄清次数，防死循环用。
 """
 import operator
@@ -56,7 +56,9 @@ class AgentState(TypedDict):
     product_evidence: dict[str, list[dict]]
     kg_status: dict[str, str]
     kg_metadata: dict[str, dict]
-    zdm_mode: bool             # 方案 B：真实源（值海纳）模式，检索后直连推荐，跳过比价/下单闭环
+    comparison: dict
+    order_intent_id: str | None
+    zdm_mode: bool             # 值得买真实源模式
     quotes: list[dict]
     normalized: list[dict]
     degraded_sources: list[str]   # M6：本次比价中熔断/失败的平台（"暂不可比"，供推荐透出）
@@ -85,6 +87,8 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "product_evidence": {},
         "kg_status": {},
         "kg_metadata": {},
+        "comparison": {},
+        "order_intent_id": None,
         "zdm_mode": False,
         "quotes": [],
         "normalized": [],

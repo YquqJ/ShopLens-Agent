@@ -97,16 +97,21 @@ class ProfileMemory(Base):
 
 
 class Order(Base):
-    """订单：draft -> confirmed -> placed，金额（报价/成交价）固化落库。"""
+    """订单：确认后的商品快照与意图幂等键固化落库。"""
 
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_intent_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     sku_id: Mapped[str] = mapped_column(String(64))
+    title_snapshot: Mapped[str] = mapped_column(String(200), default="")
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(16), nullable=True)  # jd/taobao/pdd/主库
+    catalog_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     quoted_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    shipping_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     final_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="draft")
     is_recommended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 是否购买首推（👍推荐品）

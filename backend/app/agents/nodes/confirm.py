@@ -13,6 +13,7 @@ from app.agents.state import AgentState
 
 
 _CANCEL_ORDER_REPLY = "好的，已取消本次下单。你可以继续说明购物需求，也可以说“退出导购”结束本轮。"
+_INVALID_SELECTION_REPLY = "你选择的商品不在当前推荐结果中，本次下单已停止，请重新发起导购。"
 
 
 def _draft(item: dict, quote: dict) -> dict:
@@ -20,6 +21,7 @@ def _draft(item: dict, quote: dict) -> dict:
     return {
         "sku_id": item["sku_id"],
         "title": item["title"],
+        "url": item.get("url", ""),
         "catalog_price": item.get("catalog_price"),
         "platform": quote["platform"],
         "price": quote["price"],
@@ -73,7 +75,13 @@ async def confirm_node(state: AgentState) -> dict:
         }
     # 方案 B：仅首轮确认应用「候选/平台选择」，重确认保留锁定价
     if not re_confirm and isinstance(decision, dict):
-        selected = _resolve_selection(normalized, decision)
-        if selected is not None:
-            draft = selected
+        has_selection = bool(decision.get("sku_id") or decision.get("platform"))
+        selected = _resolve_selection(normalized, decision) if has_selection else draft
+        if selected is None:
+            return {
+                "draft_order": None,
+                "order": {"status": "invalid_selection"},
+                "messages": [AIMessage(_INVALID_SELECTION_REPLY)],
+            }
+        draft = selected
     return {"draft_order": draft, "order": {"status": "confirmed"}}

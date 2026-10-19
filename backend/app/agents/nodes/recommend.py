@@ -7,6 +7,8 @@
 - M7 结构化裁剪：喂给 LLM 的上下文从「字典 repr 全文」改为紧凑 key=value 摘要
   （build_user(compact=True)），不喂 normalize 前的原始报价原文。
 """
+import uuid
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
 from pydantic import BaseModel
@@ -21,14 +23,95 @@ _TOP_N = 3
 class Reason(BaseModel):
     sku_id: str
     reason: str
+    evidence_ids: list[str] = []
 
 
-class RecommendResult(BaseModel):
+class ComparisonDimension(BaseModel):
+    field: str
+    evidence_by_sku: dict[str, str]
+
+
+class ComparisonResult(BaseModel):
     summary: str
-    reasons: list[Reason]
+    best_sku_id: str | None = None
+    dimensions: list[ComparisonDimension] = []
+    reasons: list[Reason] = []
 
 
-_SYSTEM = "你是电商导购。基于给定候选商品数据，为每条写一句可溯源推荐理由（引用商品属性），并给一句总结。理由只描述、不编造价格数值。"
+RecommendResult = ComparisonResult
+
+
+_SYSTEM = (
+    "你是电商导购。只能基于候选事实和 evidence_id 做横向比较。"
+    "只返回候选中真实存在的 sku_id 和 evidence_id；不要输出价格、平台、属性值或来源文本。"
+    "dimension 的 field 必须是同一字段，evidence_by_sku 至少覆盖两个候选。"
+    "没有足够横向证据时 best_sku_id 必须为 null。"
+)
+
+
+def validate_comparison(result: ComparisonResult, candidates: list[dict], evidence: dict[str, list[dict]]) -> dict:
+    """Validate model references and backfill displayed values from server facts."""
+    sku_ids = {candidate.get("sku_id") for candidate in candidates}
+    facts_by_id = {
+        fact.get("evidence_id"): fact
+        for sku_facts in evidence.values()
+        for fact in sku_facts
+        if fact.get("evidence_id")
+    }
+    dimensions = []
+    for dimension in result.dimensions:
+        field = dimension.field
+        refs = dimension.evidence_by_sku
+        valid = {}
+        values = {}
+        for sku_id, evidence_id in refs.items():
+            fact = facts_by_id.get(evidence_id)
+            if sku_id not in sku_ids or fact is None or fact.get("sku_id") != sku_id or fact.get("field") != field:
+                continue
+            valid[sku_id] = evidence_id
+            values[sku_id] = fact.get("value")
+        if len(valid) >= 2:
+            dimensions.append({"field": field, "evidence_by_sku": valid, "values": values})
+
+    reasons = []
+    for reason in result.reasons:
+        if reason.sku_id not in sku_ids:
+            continue
+        valid_ids = [evidence_id for evidence_id in reason.evidence_ids if evidence_id in facts_by_id and facts_by_id[evidence_id].get("sku_id") == reason.sku_id]
+        if valid_ids:
+            reasons.append({"sku_id": reason.sku_id, "reason": reason.reason, "evidence_ids": valid_ids})
+
+    best_sku_id = result.best_sku_id
+    if best_sku_id not in sku_ids or not any(best_sku_id in dimension["evidence_by_sku"] and len(dimension["evidence_by_sku"]) >= 2 for dimension in dimensions):
+        best_sku_id = None
+    return {
+        "summary": result.summary,
+        "best_sku_id": best_sku_id,
+        "dimensions": dimensions,
+        "reasons": reasons,
+    }
+
+
+def _evidence_context(top: list[dict], evidence: dict[str, list[dict]]) -> str:
+    lines = []
+    for item in top:
+        sku_id = item["sku_id"]
+        facts = evidence.get(sku_id, [])
+        compact = "; ".join(f"{fact['evidence_id']}={fact['field']}" for fact in facts)
+        lines.append(f"- {sku_id} {item.get('title', '')} evidence: {compact}")
+    return "\n".join(lines)
+
+
+def _build_evidence_items(top: list[dict], evidence: dict[str, list[dict]]) -> list[dict]:
+    items = []
+    for item in top:
+        facts = evidence.get(item["sku_id"], [])
+        items.append({
+            "sku_id": item["sku_id"],
+            "title": item.get("title"),
+            "evidence": [{"evidence_id": fact["evidence_id"], "field": fact["field"]} for fact in facts],
+        })
+    return items
 
 
 def select_top(normalized: list[dict], budget: float | None) -> list[dict]:
@@ -120,6 +203,8 @@ def _stream_preview(preview: dict) -> None:
 
 
 async def recommend_node(state: AgentState) -> dict:
+    if state.get("candidates") and state.get("product_evidence"):
+        return await _recommend_with_evidence(state)
     normalized = state.get("normalized", [])
     prefs = build_effective_preferences(
         state.get("preferences") or {}, state.get("profile_preferences") or {},
@@ -165,3 +250,55 @@ async def recommend_node(state: AgentState) -> dict:
             "reason": r.reason,                     # 文本取 LLM（挂属性，可溯源）
         })
     return {"recommendation": {"summary": res.summary, "items": items, "degraded_sources": state.get("degraded_sources", [])}}
+
+
+async def _recommend_with_evidence(state: AgentState) -> dict:
+    prefs = build_effective_preferences(state.get("preferences") or {}, state.get("profile_preferences") or {})
+    candidates = list(state.get("candidates") or [])
+    budget = prefs.get("budget")
+    top = []
+    for candidate in candidates:
+        try:
+            price = float(candidate.get("page_price"))
+        except (TypeError, ValueError):
+            continue
+        if budget is not None and price > float(budget):
+            continue
+        top.append(candidate)
+        if len(top) >= _TOP_N:
+            break
+    if not top:
+        return {"recommendation": {"summary": "当前没有预算内且价格可核验的商品。", "items": []}}
+    evidence = state.get("product_evidence") or {}
+    structured = get_structured_llm(MAIN_MODEL, ComparisonResult)
+    prompt = f"偏好={_fmt_prefs(prefs)}\n候选={_build_evidence_items(top, evidence)}\n只可引用这些证据 ID：\n{_evidence_context(top, evidence)}"
+    result: ComparisonResult = await structured.ainvoke([SystemMessage(_SYSTEM), HumanMessage(prompt)])
+    validated = validate_comparison(result, top, evidence)
+    by_sku = {item["sku_id"]: item for item in top}
+    ordered = ([by_sku[validated["best_sku_id"]]] if validated["best_sku_id"] else []) + [item for item in top if item["sku_id"] != validated["best_sku_id"]]
+    reasons = {reason["sku_id"]: reason for reason in validated["reasons"]}
+    items = []
+    for item in ordered:
+        reason = reasons.get(item["sku_id"], {})
+        items.append({
+            "sku_id": item["sku_id"],
+            "title": item.get("title"),
+            "final_price": item.get("page_price"),
+            "platform": item.get("mall"),
+            "attributes": item.get("attributes", {}),
+            "image_url": item.get("image_url") or item.get("picture", ""),
+            "url": item.get("url", ""),
+            "reason": reason.get("reason", ""),
+            "evidence_ids": reason.get("evidence_ids", []),
+        })
+    return {
+        "recommendation": {
+            "summary": validated["summary"] if validated["best_sku_id"] else "当前证据不足以确定最优商品。" if not validated["dimensions"] else validated["summary"],
+            "best_sku_id": validated["best_sku_id"],
+            "dimensions": validated["dimensions"],
+            "items": items,
+            "degraded_sources": state.get("degraded_sources", []),
+        },
+        "comparison": validated,
+        "order_intent_id": state.get("order_intent_id") or str(uuid.uuid4()),
+    }
