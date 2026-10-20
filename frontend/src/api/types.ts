@@ -88,6 +88,14 @@ export interface OrderResult {
   url?: string | null
 }
 
+export interface OrdersPage {
+  items: OrderResult[]
+  total: number
+  page: number
+  page_size: number
+  categories: string[]
+}
+
 export interface OrderQuery {
   start_at: string
   end_at: string

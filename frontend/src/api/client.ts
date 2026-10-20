@@ -3,6 +3,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   FunnelStats,
+  OrdersPage,
   ProfilePreferences,
   SSEEvent,
 } from './types'
@@ -128,6 +129,31 @@ export async function fetchFunnel(): Promise<FunnelStats> {
   const resp = await fetch(`/api/funnel?${params}`)
   if (!resp.ok) throw new Error(`漏斗统计请求失败：${resp.status}`)
   return resp.json()
+}
+
+export async function fetchOrders(filters: {
+  page: number
+  pageSize: number
+  startDate?: string
+  endDate?: string
+  keyword?: string
+  category?: string
+}): Promise<OrdersPage> {
+  const params = new URLSearchParams({
+    profile_id: getProfileId(),
+    page: String(filters.page),
+    page_size: String(filters.pageSize),
+  })
+  if (filters.startDate) params.set('start_date', filters.startDate)
+  if (filters.endDate) params.set('end_date', filters.endDate)
+  if (filters.keyword?.trim()) params.set('keyword', filters.keyword.trim())
+  if (filters.category) params.set('category', filters.category)
+  const resp = await fetch(`/api/orders?${params}`)
+  if (!resp.ok) {
+    const detail = await resp.json().catch(() => null) as { detail?: string } | null
+    throw new Error(detail?.detail || `订单列表加载失败：${resp.status}`)
+  }
+  return resp.json() as Promise<OrdersPage>
 }
 
 export async function fetchConversations(): Promise<ConversationSummary[]> {
