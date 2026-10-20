@@ -200,6 +200,55 @@ async def test_retrieve_real_mode_parses_official_haina_product_search_response(
 
 
 @pytest.mark.anyio
+async def test_retrieve_real_mode_accepts_a_successful_empty_product_list():
+    class _Tool:
+        async def ainvoke(self, _payload):
+            return [{
+                "type": "text",
+                "text": json.dumps({"error_code": 0, "data": []}),
+            }]
+
+    result = await retrieve.retrieve_node(
+        {
+            "preferences": {"category": "手机", "budget": 8000},
+            "profile_preferences": {},
+            "messages": [HumanMessage("拍照手机，预算8000")],
+        },
+        {"configurable": {
+            "source_mode": "real",
+            "mcp_tools": {"haina_product_search_pro": _Tool()},
+        }},
+    )
+
+    assert result["zdm_mode"] is True
+    assert result["candidates"] == []
+    assert result["normalized"] == []
+
+
+@pytest.mark.anyio
+async def test_retrieve_real_mode_reports_unrecognized_response_shape():
+    class _Tool:
+        async def ainvoke(self, _payload):
+            return [{
+                "type": "text",
+                "text": json.dumps({"error_code": 0, "unexpected": []}),
+            }]
+
+    with pytest.raises(RuntimeError, match="响应格式异常"):
+        await retrieve.retrieve_node(
+            {
+                "preferences": {"category": "手机"},
+                "profile_preferences": {},
+                "messages": [HumanMessage("拍照手机")],
+            },
+            {"configurable": {
+                "source_mode": "real",
+                "mcp_tools": {"haina_product_search_pro": _Tool()},
+            }},
+        )
+
+
+@pytest.mark.anyio
 async def test_retrieve_real_mode_uses_numeric_page_price_over_display_price():
     class _Tool:
         async def ainvoke(self, _payload):

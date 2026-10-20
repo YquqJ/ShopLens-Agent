@@ -91,6 +91,12 @@ async def build_chat_payload(graph, cfg: dict, message: str) -> dict:
 def _safe_node_update(node: str, update: dict) -> dict:
     """Keep durable profile values in graph state, but never stream them in trace frames."""
     safe = {key: value for key, value in update.items() if key != "messages"}
+    preferences = safe.get("preferences")
+    if isinstance(preferences, dict):
+        safe["preferences"] = {
+            key: value for key, value in preferences.items()
+            if not str(key).startswith("__")
+        }
     if node in {"load_memory", "capture_memory"}:
         safe.pop("profile_preferences", None)
     return safe

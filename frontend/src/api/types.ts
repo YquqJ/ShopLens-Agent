@@ -70,11 +70,22 @@ export interface RecommendItem {
   evidence_ids?: string[]
 }
 
+export interface PriceInsight {
+  sku_id: string
+  current_price: number
+  reference_label: string
+  reference_price: number
+  reference_kind: 'reference'
+  assessment: 'wait' | 'good_time' | 'neutral'
+  evidence_ids: string[]
+}
+
 export interface Recommendation {
   summary: string
   items: RecommendItem[]
   degraded_sources: string[]
   best_sku_id?: string | null
+  price_insights?: PriceInsight[]
   dimensions?: Array<{
     field: string
     evidence_by_sku: Record<string, string>

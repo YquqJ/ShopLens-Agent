@@ -40,6 +40,24 @@ async def test_recommend_returns_a_budget_message_without_calling_the_llm(monkey
     assert result["recommendation_history"][0]["turn_id"] == "turn-budget"
 
 
+@pytest.mark.anyio
+async def test_recommend_distinguishes_no_search_results_from_over_budget_results(monkeypatch) -> None:
+    from app.agents.nodes import recommend
+
+    monkeypatch.setattr(recommend, "get_structured_llm", lambda *_args: (_ for _ in ()).throw(AssertionError("LLM should not run")))
+    result = await recommend_node({
+        "normalized": [],
+        "preferences": {"category": "手机", "budget": 8000},
+        "profile_preferences": {},
+        "degraded_sources": [],
+        "turn_id": "turn-empty",
+    })
+
+    summary = result["recommendation"]["summary"]
+    assert "没有找到" in summary
+    assert "均高于预算" not in summary
+
+
 def test_graph_skips_hitl_when_no_budget_eligible_recommendation_exists() -> None:
     assert _after_recommend({"zdm_mode": False, "recommendation": {"items": []}}) == "end"
 

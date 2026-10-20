@@ -3,7 +3,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.api.chat import _stream
+from app.api.chat import _safe_node_update, _stream
+
+
+def test_node_updates_do_not_expose_internal_preference_reducer_fields() -> None:
+    update = _safe_node_update("clarify", {
+        "preferences": {
+            "category": "手机",
+            "__clear_preference_fields__": ["budget", "brand"],
+        },
+    })
+
+    assert update["preferences"] == {"category": "手机"}
 
 
 class MemoryEventGraph:

@@ -7,7 +7,11 @@
 - M7 结构化裁剪：喂给 LLM 的上下文从「字典 repr 全文」改为紧凑 key=value 摘要
   （build_user(compact=True)），不喂 normalize 前的原始报价原文。
 """
+import json
+import math
+import re
 import uuid
+from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
@@ -31,11 +35,19 @@ class ComparisonDimension(BaseModel):
     evidence_by_sku: dict[str, str]
 
 
+class PriceAssessment(BaseModel):
+    sku_id: str
+    reference_label: str
+    assessment: Literal["wait", "good_time", "neutral"]
+    evidence_ids: list[str] = []
+
+
 class ComparisonResult(BaseModel):
     summary: str
     best_sku_id: str | None = None
     dimensions: list[ComparisonDimension] = []
     reasons: list[Reason] = []
+    price_assessments: list[PriceAssessment] = []
 
 
 RecommendResult = ComparisonResult
@@ -46,8 +58,100 @@ _SYSTEM = (
     "只返回候选中真实存在的 sku_id 和 evidence_id；不要输出价格、平台、属性值或来源文本。"
     "dimension 的 field 必须是同一字段，evidence_by_sku 至少覆盖两个候选。"
     "每条 reasons 必须至少引用一个属于该 sku_id 的 evidence_id。"
+    "price_assessments 只处理标题为常卖价的价格标签，必须引用该商品的当前价格和价格标签 evidence_id。"
+    "当前价高于常卖价时 assessment=wait，当前价低于常卖价时 assessment=good_time，二者相等时 assessment=neutral。"
     "没有足够横向证据时 best_sku_id 必须为 null。"
 )
+
+_PRICE_VALUE_PATTERN = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_REGULAR_PRICE_LABEL = "常卖价"
+
+
+def _price_number(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        match = _PRICE_VALUE_PATTERN.search(value.replace(",", ""))
+        if not match:
+            return None
+        number = float(match.group())
+    else:
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _build_price_timing_context(top: list[dict], evidence: dict[str, list[dict]]) -> list[dict]:
+    """Join current prices with the single source-backed regular-price tag."""
+    contexts = []
+    for item in top:
+        sku_id = item.get("sku_id")
+        facts = evidence.get(sku_id, [])
+        page_fact = next((fact for fact in facts if fact.get("field") == "page_price"), None)
+        tags_fact = next((fact for fact in facts if fact.get("field") == "price_tags"), None)
+        current_price = _price_number(page_fact.get("value") if page_fact else item.get("page_price"))
+        tags = tags_fact.get("value") if tags_fact else []
+        if isinstance(tags, dict):
+            tags = [tags]
+        if not isinstance(tags, list) or current_price is None or not tags_fact or not page_fact:
+            continue
+        regular_tag = next(
+            (
+                tag for tag in tags
+                if isinstance(tag, dict)
+                and str(next((tag.get(key) for key in ("title", "name", "label") if tag.get(key)), "")).replace(" ", "") == _REGULAR_PRICE_LABEL
+            ),
+            None,
+        )
+        if regular_tag is None:
+            continue
+        reference_price = _price_number(next((regular_tag.get(key) for key in ("price", "value") if regular_tag.get(key) is not None), None))
+        if reference_price is None:
+            continue
+        contexts.append({
+            "sku_id": sku_id,
+            "current_price": current_price,
+            "reference_label": _REGULAR_PRICE_LABEL,
+            "reference_price": reference_price,
+            "reference_kind": "reference",
+            "evidence_ids": [page_fact["evidence_id"], tags_fact["evidence_id"]],
+        })
+    return contexts
+
+
+def _expected_price_assessment(context: dict) -> str:
+    if context["current_price"] > context["reference_price"]:
+        return "wait"
+    if context["current_price"] < context["reference_price"]:
+        return "good_time"
+    return "neutral"
+
+
+def _validate_price_assessments(result: ComparisonResult, contexts: list[dict]) -> list[dict]:
+    """Return source-backed timing advice, using the model only as a validated hint."""
+    proposed = {
+        (assessment.sku_id, assessment.reference_label): assessment
+        for assessment in result.price_assessments
+    }
+    insights = []
+    for context in contexts:
+        expected = _expected_price_assessment(context)
+        assessment = proposed.get((context["sku_id"], context["reference_label"]))
+        evidence_matches = assessment is not None and set(context["evidence_ids"]).issubset(assessment.evidence_ids)
+        # Source values are authoritative. If the model omits the item or cites unrelated
+        # evidence, still surface the deterministic assessment from the verified facts.
+        validated_assessment = (
+            assessment.assessment
+            if evidence_matches and assessment.assessment == expected
+            else expected
+        )
+        if validated_assessment != "neutral":
+            insights.append({
+                **context,
+                "assessment": validated_assessment,
+            })
+    return insights
 
 
 def validate_comparison(result: ComparisonResult, candidates: list[dict], evidence: dict[str, list[dict]]) -> dict:
@@ -90,6 +194,10 @@ def validate_comparison(result: ComparisonResult, candidates: list[dict], eviden
         "best_sku_id": best_sku_id,
         "dimensions": dimensions,
         "reasons": reasons,
+        "price_insights": _validate_price_assessments(
+            result,
+            _build_price_timing_context(candidates, evidence),
+        ),
     }
 
 
@@ -262,11 +370,12 @@ async def recommend_node(state: AgentState) -> dict:
     top = select_top(normalized, prefs.get("budget"))
     if not top:
         budget = prefs.get("budget")
-        summary = (
-            f"当前召回商品的到手价均高于预算 ¥{budget:g}，请提高预算或调整品类、风格、材质等条件。"
-            if budget is not None
-            else "当前没有可推荐商品，请调整购物条件后再试。"
-        )
+        if not normalized:
+            summary = "没有找到符合当前条件的商品，请放宽筛选条件或换个关键词再试。"
+        elif budget is not None:
+            summary = f"当前召回商品的到手价均高于预算 ¥{budget:g}，请提高预算或调整品类、风格、材质等条件。"
+        else:
+            summary = "当前没有可推荐商品，请调整购物条件后再试。"
         recommendation = {
             "summary": summary,
             "items": [],
@@ -327,14 +436,25 @@ async def _recommend_with_evidence(state: AgentState) -> dict:
         if len(top) >= _TOP_N:
             break
     if not top:
-        recommendation = {"summary": "当前没有预算内且价格可核验的商品。", "items": []}
+        summary = (
+            "没有找到符合当前条件的商品，请放宽筛选条件或换个关键词后重试。"
+            if not candidates
+            else "当前没有预算内且价格可核验的商品。"
+        )
+        recommendation = {"summary": summary, "items": []}
         return {
             "recommendation": recommendation,
             "recommendation_history": _recommendation_history_update(state, recommendation),
         }
     evidence = state.get("product_evidence") or {}
     structured = get_structured_llm(MAIN_MODEL, ComparisonResult)
-    prompt = f"偏好={_fmt_prefs(prefs)}\n候选={_build_evidence_items(top, evidence)}\n只可引用这些证据 ID：\n{_evidence_context(top, evidence)}"
+    price_context = _build_price_timing_context(top, evidence)
+    prompt = (
+        f"偏好={_fmt_prefs(prefs)}\n"
+        f"候选={_build_evidence_items(top, evidence)}\n"
+        f"价格时机参考={json.dumps(price_context, ensure_ascii=False)}\n"
+        f"只可引用这些证据 ID：\n{_evidence_context(top, evidence)}"
+    )
     result: ComparisonResult = await structured.ainvoke([SystemMessage(_SYSTEM), HumanMessage(prompt)])
     validated = validate_comparison(result, top, evidence)
     by_sku = {item["sku_id"]: item for item in top}
@@ -358,6 +478,7 @@ async def _recommend_with_evidence(state: AgentState) -> dict:
         "summary": validated["summary"] if validated["best_sku_id"] else "当前证据不足以确定最优商品。" if not validated["dimensions"] else validated["summary"],
         "best_sku_id": validated["best_sku_id"],
         "dimensions": validated["dimensions"],
+        "price_insights": validated["price_insights"],
         "items": items,
         "degraded_sources": state.get("degraded_sources", []),
     }

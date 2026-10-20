@@ -15,6 +15,7 @@ from typing import Annotated, Any, TypedDict
 from langchain_core.messages import HumanMessage
 
 _RESET_SESSION_PREFERENCES = "__reset_session_preferences__"
+_CLEAR_PREFERENCE_FIELDS = "__clear_preference_fields__"
 
 
 def merge_preferences(a: dict, b: dict) -> dict:
@@ -23,11 +24,14 @@ def merge_preferences(a: dict, b: dict) -> dict:
         return {
             key: value
             for key, value in b.items()
-            if key != _RESET_SESSION_PREFERENCES and value not in (None, "", [])
+            if key not in {_RESET_SESSION_PREFERENCES, _CLEAR_PREFERENCE_FIELDS}
+            and value not in (None, "", [])
         }
     merged = dict(a or {})
+    for key in b.get(_CLEAR_PREFERENCE_FIELDS, []):
+        merged.pop(key, None)
     for k, v in (b or {}).items():
-        if v not in (None, "", []):
+        if k not in {_RESET_SESSION_PREFERENCES, _CLEAR_PREFERENCE_FIELDS} and v not in (None, "", []):
             merged[k] = v
     return merged
 

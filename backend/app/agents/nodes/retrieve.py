@@ -90,15 +90,22 @@ def _find_real_search_tool(tools: dict):
 def _real_items(result) -> list[dict]:
     """统一官方 Haina MCP 与旧本地 wrapper 的返回结构。"""
     if isinstance(result, dict):
+        error_code = result.get("error_code")
+        if error_code not in (None, 0, "0"):
+            message = result.get("error_msg") or "未知错误"
+            raise RuntimeError(f"值得买 MCP 搜索失败（{error_code}）：{message}")
         data = result.get("data")
         if isinstance(data, list):
-            return data
-        if isinstance(data, dict) and isinstance(data.get("rows"), list):
-            return data["rows"]
-        items = result.get("items")
-        if isinstance(items, list):
+            items = data
+        elif isinstance(data, dict) and isinstance(data.get("rows"), list):
+            items = data["rows"]
+        else:
+            items = result.get("items")
+        if isinstance(items, list) and all(isinstance(item, dict) for item in items):
             return items
-    return result if isinstance(result, list) else []
+    elif isinstance(result, list) and all(isinstance(item, dict) for item in result):
+        return result
+    raise RuntimeError("值得买 MCP 商品列表响应格式异常")
 
 
 def build_real_search_payload(prefs: dict, *, query: str | None = None) -> dict:
@@ -235,8 +242,6 @@ async def retrieve_node(state: AgentState, config: RunnableConfig | None = None)
         payload = build_real_search_payload(prefs, query=query)
         result = _unwrap_mcp_result(await search_tool.ainvoke(payload))
         items = _real_items(result)
-        if not items:
-            raise RuntimeError("值得买 MCP 返回了无法解析的商品列表")
         candidates = _zhidemai_to_candidates(items)
         normalized = _zhidemai_to_normalized(items)
         product_evidence = {candidate["sku_id"]: candidate["evidence"] for candidate in candidates}

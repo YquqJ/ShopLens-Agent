@@ -41,7 +41,12 @@ _SYSTEM = (
     "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/商城/品牌/颜色/风格/材质/场景/版型/性别），拿不准的字段留空。"
     "品类可以是任意商品；服饰相关字段仅在用户购买服饰时填写。商城只在用户明确指定时填写，京东用 jd、淘宝用 taobao、拼多多用 pdd。"
     "无法归入这些闭集字段的功能/描述语（如 显瘦一点、透气）填到 requirements。"
+    "如果用户本轮更换了商品品类，视为新的商品需求；旧品类的预算、品牌、颜色、风格、材质、场景、版型、性别及功能要求不可自动沿用，只有本轮再次明确提到时才填写。"
     "关键信息=品类+预算，缺任一即 needs_clarification=True。"
+)
+
+_CATEGORY_SCOPED_FIELDS = (
+    "budget", "platform", "brand", "color", "style", "material", "scene", "fit", "gender", "requirements",
 )
 
 _PLATFORM_ALIASES = {
@@ -96,21 +101,29 @@ async def clarify_node(state: AgentState) -> dict:
     if prev:
         system += (
             "\n历史已确认偏好：" + json.dumps(prev, ensure_ascii=False)
-            + "。本轮在其基础上补充或纠正，未提及字段保持原值。"
+            + "。若用户本轮明确改买不同品类，则旧品类相关条件一律不沿用、未明确的新条件留空；否则可在历史基础上补充或纠正，未提及字段保持原值。"
         )
     result: ClarifyResult = await structured.ainvoke([
         SystemMessage(system), HumanMessage(latest),
     ])
 
-    # 本轮提取 + 历史合并（非空覆盖，空字段回退历史）
+    # A changed product category starts a fresh set of product-specific constraints.
     new_prefs = normalize_preferences(result.preferences.model_dump())
-    merged = merge_preferences(prev, new_prefs)
+    category_changed = bool(
+        new_prefs.get("category")
+        and prev.get("category")
+        and str(new_prefs["category"]).strip() != str(prev["category"]).strip()
+    )
+    preference_update = dict(new_prefs)
+    if category_changed:
+        preference_update["__clear_preference_fields__"] = _CATEGORY_SCOPED_FIELDS
+    merged = merge_preferences(prev, preference_update)
 
     # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification
     needs = bool(_missing(merged))
 
     update: dict = {
-        "preferences": new_prefs,   # 经 merge reducer 与历史合并
+        "preferences": preference_update,   # 经 merge reducer 与历史合并
         "trace_preferences": merged,
         "hop_count": state.get("hop_count", 0) + 1,
     }

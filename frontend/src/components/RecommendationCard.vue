@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import type { Turn } from '../stores/chat'
-import type { NormalizedItem, Quote, RecommendItem } from '../api/types'
+import type { NormalizedItem, PriceInsight, Quote, RecommendItem } from '../api/types'
 import OrderCard from './OrderCard.vue'
 
 const props = defineProps<{ turn: Turn }>()
@@ -23,6 +23,7 @@ const PLATFORM_ALIASES: Record<string, string> = {
   '淘宝': 'taobao',
   '天猫': 'taobao',
   '天猫精选': 'taobao',
+  '淘宝精选': 'taobao',
   '拼多多': 'pdd',
 }
 
@@ -59,39 +60,34 @@ const selectedQuote = computed<Quote | null>(
 const bestItem = computed(() => rec.value.items.find((item) => item.sku_id === rec.value.best_sku_id))
 const selectionDisabled = computed(() => ['placed', 'cancelled'].includes(props.turn.order?.status ?? ''))
 
-const DIMENSION_LABELS: Record<string, string> = {
-  category: '品类',
-  color: '颜色',
-  material: '材质',
-  platform: '平台',
-  price: '价格',
-  final_price: '到手价',
-  page_price: '页面价格',
-  rating: '评分',
-  sales: '销量',
-  shipping: '配送',
-  stock: '库存',
-}
-
 function isBestCandidate(item: RecommendItem, index: number): boolean {
   return rec.value.best_sku_id ? item.sku_id === rec.value.best_sku_id : index === 0
 }
 
-function dimensionLabel(field: string): string {
-  return DIMENSION_LABELS[field] ?? field
+function candidateLabel(item: RecommendItem): string {
+  const index = rec.value.items.findIndex((candidate) => candidate.sku_id === item.sku_id)
+  return `#${index + 1}`
 }
 
-function formatDimensionValue(value: unknown): string {
-  if (value == null || value === '') return '未提供'
-  if (typeof value === 'boolean') return value ? '是' : '否'
-  if (Array.isArray(value)) return value.map(formatDimensionValue).join(' / ')
-  if (typeof value === 'object') {
-    return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${key}: ${formatDimensionValue(item)}`)
-      .join('；')
+function priceInsightText(insight: PriceInsight): string {
+  const item = rec.value.items.find((candidate) => candidate.sku_id === insight.sku_id)
+  const label = item ? candidateLabel(item) : insight.sku_id
+  const current = fmt(insight.current_price)
+  const reference = fmt(insight.reference_price)
+
+  if (insight.assessment === 'wait') {
+    return `${label}：当前价 ${current}，高于常卖价 ${reference}，当前价格不占优，可以等等再入手。`
   }
-  return String(value)
+  return `${label}：当前价 ${current}，低于常卖价 ${reference}，当前价格较低，可以直接入手。`
 }
+
+function displayDecisionText(text: string): string {
+  return rec.value.items.reduce(
+    (display, item, index) => display.replaceAll(item.sku_id, `#${index + 1}`),
+    text,
+  )
+}
+
 function selectSku(item: RecommendItem): void {
   if (selectionDisabled.value) return
   const skuId = item.sku_id
@@ -169,7 +165,7 @@ async function cancel(): Promise<void> {
       v-for="(item, idx) in rec.items"
       :key="item.sku_id"
       class="cand"
-      :class="{ selected: selectedSkuId === item.sku_id, 'selection-disabled': selectionDisabled }"
+      :class="{ selected: selectedSkuId === item.sku_id && !selectionDisabled, 'selection-disabled': selectionDisabled }"
       @click="selectSku(item)"
     >
       <div class="thumb" :class="{ 'thumb-image': hasImage(item) }">
@@ -179,7 +175,7 @@ async function cancel(): Promise<void> {
       <div class="cand-content">
         <div class="cand-title-row">
           <h4 class="cand-title" :title="item.title">{{ item.title }}</h4>
-          <span :class="isBestCandidate(item, idx) ? 'badge-best' : 'badge-alt'">{{ isBestCandidate(item, idx) ? '👍 推荐' : '备选' }}</span>
+          <!-- <span :class="isBestCandidate(item, idx) ? 'badge-best' : 'badge-alt'">{{ isBestCandidate(item, idx) ? '👍 推荐' : '备选' }}</span> -->
         </div>
         <div class="tags">
           <span :class="['tag', 'platform-tag', { 'platform-tag-logo': plat(item.platform).logo }]">
@@ -219,29 +215,21 @@ async function cancel(): Promise<void> {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         <h5>候选对比决策</h5>
       </div>
-      <p v-if="rec.summary" class="decision-summary">{{ rec.summary }}</p>
-      <p v-if="bestItem" class="decision-best">建议优先选择：{{ bestItem.title }}</p>
+      <p v-if="rec.summary" class="decision-summary">{{ displayDecisionText(rec.summary) }}</p>
+      <p v-if="bestItem" class="decision-best">建议优先选择：{{ candidateLabel(bestItem) }} {{ bestItem.title }}</p>
 
-      <div v-if="rec.dimensions?.length" class="decision-dimensions">
-        <div v-for="dimension in rec.dimensions" :key="dimension.field" class="decision-dimension">
-          <div class="dimension-field">{{ dimensionLabel(dimension.field) }}</div>
-          <div class="dimension-values">
-            <div v-for="item in rec.items" :key="item.sku_id" class="dimension-value">
-              <span class="dimension-title" :title="item.title">{{ item.title }}</span>
-              <span class="dimension-fact">{{ formatDimensionValue(dimension.values?.[item.sku_id]) }}</span>
-              <span v-if="dimension.evidence_by_sku[item.sku_id]" class="evidence-id">{{ dimension.evidence_by_sku[item.sku_id] }}</span>
-            </div>
-          </div>
-        </div>
+      <div v-if="rec.price_insights?.length" class="decision-price-insights">
+        <p v-for="insight in rec.price_insights" :key="`${insight.sku_id}:${insight.reference_label}`" class="price-insight">
+          {{ priceInsightText(insight) }}
+        </p>
       </div>
-      <p v-else class="decision-empty">当前候选缺少可横向核验的结构化字段，结论仅基于已返回商品信息。</p>
     </section>
 
     <!-- HITL 下单确认 -->
     <div v-if="turn.draftOrder && turn.order?.status !== 'placed' && turn.order?.status !== 'cancelled'" class="hitl">
       <h3>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-        下单确认 · 人工确认（HITL）
+        下单确认 · 人工确认
       </h3>
       <p>点击上方任一候选卡片选中商品，确认后生成模拟订单。</p>
       <div v-if="!turn.priceRaised && !selectedSkuId" class="select-hint">👆 请先点选一款候选商品，再确认下单</div>
@@ -249,7 +237,7 @@ async function cancel(): Promise<void> {
       <div v-if="summary" class="order-summary">
         <div class="order-line"><span>{{ summary.title }} ×1</span><span>{{ fmt(summary.final_price) }}</span></div>
         <div class="order-line"><span>平台</span><span>{{ platName(summary.platform) }}</span></div>
-        <div class="order-line"><span>快递时效</span><span>{{ summary.eta_days }} 天</span></div>
+        <!-- <div class="order-line"><span>快递时效</span><span>{{ summary.eta_days }} 天</span></div> -->
         <div class="order-line total">
           <span>应付合计</span>
           <span>
@@ -263,7 +251,7 @@ async function cancel(): Promise<void> {
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
       <div v-if="turn.order?.status !== 'placed'" class="btn-row">
         <button class="btn btn-primary" :disabled="turn.streaming || (!turn.priceRaised && !selectedSkuId)" @click="confirm">{{ turn.streaming ? '二次询价中…' : '确认下单' }}</button>
-        <button class="btn btn-ghost" :disabled="turn.streaming" @click="cancel">取消下单</button>
+        <button class="btn btn-ghost" :disabled="turn.streaming" @click="cancel">取消</button>
       </div>
     </div>
 
@@ -272,9 +260,18 @@ async function cancel(): Promise<void> {
       class="transaction-result"
       :order="turn.order"
     />
-    <div v-else-if="turn.order?.status === 'cancelled'" class="transaction-result transaction-cancelled">
-      <strong>本次下单已取消</strong>
-      <span>推荐商品仍保留，你可以重新选择后下单。</span>
-    </div>
+    <article v-else-if="turn.order?.status === 'cancelled'" class="order-card cancelled-card transaction-result" aria-label="模拟下单已取消">
+      <div class="order-card-head">
+        <div>
+          <div class="order-card-kicker">模拟订单 · 已取消</div>
+          <h3>本次未生成订单</h3>
+        </div>
+        <span class="order-status cancelled-status">已取消</span>
+      </div>
+      <div class="cancelled-card-body">
+        <span class="cancelled-mark" aria-hidden="true">×</span>
+        <p>推荐结果仍保留，你可以继续查看商品详情。</p>
+      </div>
+    </article>
   </div>
 </template>
