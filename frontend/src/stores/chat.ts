@@ -66,7 +66,6 @@ const NODE_META: Record<string, { label: string; desc: string }> = {
   clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
   route: { label: '意图路由', desc: '判断购物 / 记忆 / 取消 / 其他' },
   retrieve: { label: '商品检索', desc: '召回候选商品' },
-  enrich_knowledge: { label: '知识图谱增强', desc: '补充实体属性并建立商品证据' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
   confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
   place_order: { label: '下单落库', desc: '订单写入 PostgreSQL' },
@@ -389,10 +388,6 @@ export const useChatStore = defineStore('chat', {
           const candidates = (data.candidates as unknown[]) ?? []
           const detail = ` · MCP 真实源召回 ${candidates.length} 条商品`
           pushTrace(turn, 'retrieve', 'done', detail)
-          break
-        }
-        case 'enrich_knowledge': {
-          pushTrace(turn, 'enrich_knowledge', 'done')
           break
         }
         case 'recommend': {

@@ -2,7 +2,7 @@
 
 设计决策：
 - 在 MCP 工具外层统一包装（而非散落在各节点），源状态全局共享，节点只做编排；
-- source 从工具名和描述解析，为值得买商品检索、知识图谱等工作负载隔离熔断；
+- source 从工具名和描述解析，为值得买商品检索等工作负载隔离熔断；
 - 熔断打开 → 直接抛 SourceError（不触发子进程）；重试耗尽 → record_failure + SourceError；
 - SourceRegistry 持有每源 breaker、重试配置、错误预算，protect() 产出一份 name→工具 映射。
 """
@@ -24,10 +24,6 @@ def source_of(tool_name: str, description: str = "") -> str:
     """Map tools to isolated source breakers, including separate Haina workloads."""
     lowered = f"{tool_name} {description}".lower()
     if "haina" in lowered or "zhidemai" in lowered:
-        if any(marker in lowered for marker in (
-            "knowledge graph", "knowledge_graph", "knowledge-graph", "entity", "实体", "知识图谱", " kg ", "_kg_",
-        )):
-            return "haina_kg"
         if any(marker in lowered for marker in ("product", "商品", "产品")):
             return "haina_product"
         return "haina_unknown"

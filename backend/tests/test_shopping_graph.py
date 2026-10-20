@@ -5,11 +5,11 @@ from app.agents.nodes import retrieve
 from app.agents.state import initial_state
 
 
-def test_shopping_graph_contains_kg_and_no_legacy_price_nodes():
+def test_shopping_graph_uses_real_product_facts_without_enrichment_node():
     nodes = set(build_graph().get_graph().nodes)
 
-    assert {"enrich_knowledge", "recommend", "confirm", "place_order"} <= nodes
-    assert {"retrieve", "enrich_knowledge", "recommend", "confirm", "place_order"} <= nodes
+    assert {"retrieve", "recommend", "confirm", "place_order"} <= nodes
+    assert "enrich_knowledge" not in nodes
 
 
 @pytest.mark.anyio
@@ -24,7 +24,6 @@ async def test_retrieval_without_haina_tool_fails_explicitly():
 def test_initial_state_has_evidence_and_comparison_fields():
     state = initial_state("买手机")
     assert state["product_evidence"] == {}
-    assert state["kg_status"] == {}
     assert state["comparison"] == {}
     assert state["order_intent_id"] is None
     assert state["turn_id"]

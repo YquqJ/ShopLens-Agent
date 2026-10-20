@@ -1,12 +1,12 @@
 # ShopLens Agent
 
-ShopLens 是面向电商售前场景的 LangGraph 单 Agent。系统把自然语言需求结构化，通过值得买官方 MCP 检索真实商品，再用知识图谱补充可核验事实，由 LLM 生成候选对比决策；用户选择并确认后，系统将模拟订单写入 PostgreSQL，并支持继续查询订单和消费统计。
+ShopLens 是面向电商售前场景的 LangGraph 单 Agent。系统把自然语言需求结构化，通过值得买官方 MCP 检索真实商品，由 LLM 基于真实源字段生成候选对比决策；用户选择并确认后，系统将模拟订单写入 PostgreSQL，并支持继续查询订单和消费统计。
 
 ## 核心能力
 
-- 单 Agent StateGraph：意图路由、需求澄清、商品检索、知识增强、事实约束推荐、人工确认和模拟下单。
+- 单 Agent StateGraph：意图路由、需求澄清、商品检索、事实约束推荐、人工确认和模拟下单。
 - 值得买真实 MCP：通过 `langchain-mcp-adapters` 动态发现官方商品检索工具，不在业务代码中直连外部 HTTP。
-- 证据约束推荐：商品价格、商城、属性和知识图谱字段来自工具事实，LLM 只负责比较取舍和推荐理由。
+- 证据约束推荐：商品价格、商城、属性和价格标签来自值得买真实源，LLM 只负责比较取舍和推荐理由。
 - 可靠性治理：MCP 调用统一使用指数退避、`CLOSED/OPEN/HALF_OPEN` 三态熔断、降级和 OpenTelemetry/Langfuse Trace。
 - 自然语言订单查询：支持“昨天我买了什么”“上个月买耳机花了多少钱”等明细查询和消费统计。
 
@@ -17,9 +17,6 @@ ShopLens 是面向电商售前场景的 LangGraph 单 Agent。系统把自然语
    |
    v
 load_memory -> route -> clarify -> retrieve(值得买 MCP)
-                                      |
-                                      v
-                             enrich_knowledge
                                       |
                                       v
                                recommend

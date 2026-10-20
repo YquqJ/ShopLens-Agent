@@ -1,15 +1,13 @@
-"""图组装：clarify → route → retrieve → knowledge → recommend
+"""图组装：clarify → route → retrieve → recommend
        → confirm(interrupt) → place_order。
 
 单 Agent StateGraph 让共享状态、澄清分支和 HITL 确认都能被 checkpointer
-持久化；真实商品事实与知识图谱证据在 recommend 前完成增强，确认后只做一次
-模拟订单幂等落库。
+持久化；值得买真实商品事实直接进入推荐决策，确认后只做一次模拟订单幂等落库。
 """
 from langgraph.graph import END, START, StateGraph
 from app.agents.nodes import (
     clarify,
     confirm,
-    knowledge,
     memory,
     place_order,
     recommend,
@@ -34,10 +32,6 @@ def _after_route(state: AgentState) -> str:
     return "end"
 
 
-def _after_retrieve(state: AgentState) -> str:
-    return "enrich_knowledge"
-
-
 def _after_recommend(state: AgentState) -> str:
     if not (state.get("recommendation") or {}).get("items"):
         return "end"
@@ -55,7 +49,6 @@ def build_graph(checkpointer=None):
     g.add_node("capture_memory", memory.capture_memory_node)
     g.add_node("route", route.route_node)
     g.add_node("retrieve", retrieve.retrieve_node)
-    g.add_node("enrich_knowledge", knowledge.knowledge_enrich_node)
     g.add_node("recommend", recommend.recommend_node)
     g.add_node("confirm", confirm.confirm_node)
     g.add_node("place_order", place_order.place_order_node)
@@ -68,11 +61,7 @@ def build_graph(checkpointer=None):
     )
     g.add_edge("clarify", "capture_memory")
     g.add_conditional_edges("capture_memory", _after_capture, {"retrieve": "retrieve", "end": END})
-    g.add_conditional_edges(
-        "retrieve", _after_retrieve,
-        {"enrich_knowledge": "enrich_knowledge"},
-    )
-    g.add_edge("enrich_knowledge", "recommend")
+    g.add_edge("retrieve", "recommend")
     g.add_conditional_edges(
         "recommend", _after_recommend,
         {"confirm": "confirm", "end": END},

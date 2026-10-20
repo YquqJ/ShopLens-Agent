@@ -1,4 +1,4 @@
-"""推荐节点：LLM 基于真实商品与知识图谱事实生成可溯源推荐。
+"""推荐节点：LLM 基于值得买真实商品字段生成可溯源推荐。
 
 设计决策：
 - 数值和媒体字段（sku_id/title/final_price/platform/attributes/image_url/url）一律从候选事实取，
@@ -230,13 +230,7 @@ def _fallback_reason(item: dict, facts: list[dict]) -> dict:
     """Keep cards explainable when the model omits a valid reason citation."""
     evidence_ids = [fact["evidence_id"] for fact in facts if fact.get("evidence_id")][:3]
     fields = {fact.get("field") for fact in facts}
-    if any(
-        str(fact.get("field", "")).startswith("entity_")
-        or ":kg:" in str(fact.get("evidence_id"))
-        for fact in facts
-    ):
-        reason = "该商品有结构化商品属性证据可核验；当前横向证据不足，暂不宣称它绝对最优。"
-    elif "good_comments_share" in fields or "price_tags" in fields:
+    if "good_comments_share" in fields or "price_tags" in fields:
         reason = "该商品具备价格与口碑相关的真实源证据；当前横向属性证据不足，建议结合你的需求选择。"
     else:
         reason = "该商品的标题、价格和商城信息来自值得买真实源，可核验；当前横向属性证据不足，建议结合需求选择。"
