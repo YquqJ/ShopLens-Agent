@@ -117,6 +117,7 @@ class Order(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     sku_id: Mapped[str] = mapped_column(String(64))
     title_snapshot: Mapped[str] = mapped_column(String(200), default="")
+    category_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     image_url_snapshot: Mapped[str | None] = mapped_column(String(512), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(16), nullable=True)  # jd/taobao/pdd/主库

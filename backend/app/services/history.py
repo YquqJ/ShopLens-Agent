@@ -109,6 +109,11 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
         "draft_order": draft,
         "order": values.get("order"),
         "order_history": values.get("order_history") or [],
+        "order_query": values.get("order_query"),
+        "order_results": values.get("order_results") or [],
+        "order_summary": values.get("order_summary"),
+        "order_clarification": values.get("order_clarification"),
+        "order_error": values.get("order_error"),
         "price_raised": bool(values.get("price_raised")),
         "awaiting_hitl": awaiting,
     }

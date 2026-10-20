@@ -11,14 +11,15 @@ from app.agents.state import AgentState
 
 
 class RouteResult(BaseModel):
-    intent: Literal["shopping", "memory", "cancel", "other"] = Field(
-        ..., description="shopping=购物需求；memory=长期偏好指令；cancel=明确退出本轮导购；other=其他"
+    intent: Literal["shopping", "order_search", "order_summary", "memory", "cancel", "other"] = Field(
+        ..., description="shopping=购物需求；order_search=订单明细；order_summary=消费统计；memory=长期偏好指令；cancel=明确退出本轮导购；other=其他"
     )
 
 
 _SYSTEM = (
     "判断用户输入意图，只输出 intent。"
     "想买东西、咨询商品选品比价，或在已有购物会话中补充预算/颜色等条件=shopping；"
+    "查询历史订单明细（买了什么、买过哪些商品）=order_search；查询消费金额、订单数、平均客单价或分组统计=order_summary；"
     "明确要求记住、更新或忘记长期颜色/风格/材质偏好，且不是同时提出购物需求=memory；"
     "明确表示不要了、不买了、退出本轮导购=cancel；"
     "问候、闲聊、售后、无关内容=other。"
@@ -30,6 +31,7 @@ _MEMORY_REPLY = "已更新跨会话偏好。"
 _CANCEL_REPLY = "好的，本轮导购已结束。之后有新的购物需求时，直接告诉我即可。"
 
 _SHOPPING_MARKERS = ("买", "推荐", "比价", "价格", "预算", "商品", "衬衫", "外套", "卫衣", "裤装", "鞋", "T恤")
+_ORDER_MARKERS = ("昨天", "前天", "上周", "上个月", "最近", "今年", "买了什么", "买了哪些", "买过哪些", "花了多少钱", "买了几单", "平均每单", "订单", "消费")
 
 _CANCEL_PATTERNS = (
     re.compile(r"^(?:我)?(?:不要了|不买了|先不买了|暂时不买了|不用了|不需要了|不考虑了)[，。！？!?,\s]*$"),
@@ -64,6 +66,11 @@ def _fast_path(state: AgentState) -> str | None:
     text = _latest_text(state).strip()
     if _is_cancel_command(text):
         return "cancel"
+    temporal = any(marker in text for marker in ("今天", "昨天", "前天", "上周", "上个月", "最近", "今年"))
+    if (any(marker in text for marker in _ORDER_MARKERS) and any(
+        marker in text for marker in ("买了什么", "买了哪些", "买过", "花了", "几单", "平均", "订单", "消费")
+    )) or (temporal and "买" in text and "想买" not in text and "推荐" not in text):
+        return "order_summary" if any(marker in text for marker in ("花了", "几单", "平均", "统计", "消费")) else "order_search"
     # 已有购物上下文时，模糊退出表达交给轻量模型，不被 shopping fast path 截断。
     if any(marker in text for marker in _CANCEL_HINTS):
         return None

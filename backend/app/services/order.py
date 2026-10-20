@@ -125,6 +125,7 @@ async def place_order(
             conversation_id=conversation_id,
             sku_id=draft["sku_id"],
             title_snapshot=draft.get("title") or "",
+            category_snapshot=draft.get("category"),
             source_url=draft.get("url"),
             image_url_snapshot=draft.get("image_url"),
             platform=draft.get("platform"),

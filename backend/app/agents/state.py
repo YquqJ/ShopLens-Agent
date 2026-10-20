@@ -52,6 +52,11 @@ class AgentState(TypedDict):
     turn_id: str
     recommendation_history: Annotated[list[dict], operator.add]
     order_history: Annotated[list[dict], operator.add]
+    order_query: dict | None
+    order_results: list[dict]
+    order_summary: dict | None
+    order_clarification: str | None
+    order_error: str | None
     preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
     profile_preferences: dict  # 用户授权的跨会话长期偏好（不混入本轮 preferences）
     memory_events: Annotated[list[dict], operator.add]  # trace-safe 记忆读取/写入事件
@@ -84,6 +89,11 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "turn_id": turn_id,
         "recommendation_history": [],
         "order_history": [],
+        "order_query": None,
+        "order_results": [],
+        "order_summary": None,
+        "order_clarification": None,
+        "order_error": None,
         "preferences": {_RESET_SESSION_PREFERENCES: True} if reset_preferences else {},
         "profile_preferences": {},
         "memory_events": [],

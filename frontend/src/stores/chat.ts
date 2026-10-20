@@ -17,6 +17,8 @@ import type {
   ConversationDetail,
   DraftOrder,
   OrderResult,
+  OrderQuery,
+  OrderSummary,
   MemoryEvent,
   Preferences,
   ProfilePreferences,
@@ -44,6 +46,11 @@ export interface Turn {
   degradedSources: string[]
   draftOrder: DraftOrder | null
   order: OrderResult | null
+  orderQuery: OrderQuery | null
+  orderResults: OrderResult[]
+  orderSummary: OrderSummary | null
+  orderClarification: string
+  orderError: string
   trace: TraceNode[]
   streaming: boolean
   awaitingHitl: boolean
@@ -65,6 +72,9 @@ export interface Session {
 const NODE_META: Record<string, { label: string; desc: string }> = {
   clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
   route: { label: '意图路由', desc: '判断购物 / 记忆 / 取消 / 其他' },
+  parse_order_query: { label: '解析订单查询', desc: '解析时间范围与筛选条件' },
+  query_orders: { label: '检索订单', desc: '查询已落库的订单快照' },
+  summarize_orders: { label: '消费统计', desc: '计算订单数、总金额与平均客单价' },
   retrieve: { label: '商品检索', desc: '召回候选商品' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
   confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
@@ -125,6 +135,11 @@ function newTurn(user: string, ts?: number, id?: string): Turn {
     degradedSources: [],
     draftOrder: null,
     order: null,
+    orderQuery: null,
+    orderResults: [],
+    orderSummary: null,
+    orderClarification: '',
+    orderError: '',
     trace: [],
     streaming: true,
     awaitingHitl: false,
@@ -171,6 +186,11 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
     last.draftOrder = resolved ? null : d.draft_order
     last.priceRaised = d.price_raised
     last.awaitingHitl = resolved ? false : d.awaiting_hitl
+    last.orderQuery = d.order_query ?? null
+    last.orderResults = d.order_results ?? []
+    last.orderSummary = d.order_summary ?? null
+    last.orderClarification = d.order_clarification ?? ''
+    last.orderError = d.order_error ?? ''
   }
 
   for (const entry of d.recommendation_history ?? []) {
@@ -382,6 +402,20 @@ export const useChatStore = defineStore('chat', {
         }
         case 'route': {
           turn.agentReply = String(data.reply ?? '')
+          break
+        }
+        case 'parse_order_query': {
+          turn.orderQuery = (data.order_query as OrderQuery | null) ?? null
+          turn.orderClarification = String(data.order_clarification ?? '')
+          break
+        }
+        case 'query_orders': {
+          turn.orderResults = (data.order_results as OrderResult[]) ?? []
+          turn.orderError = String(data.order_error ?? '')
+          break
+        }
+        case 'summarize_orders': {
+          turn.orderSummary = (data.order_summary as OrderSummary | null) ?? null
           break
         }
         case 'retrieve': {

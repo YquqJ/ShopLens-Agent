@@ -9,6 +9,7 @@ from app.agents.nodes import (
     clarify,
     confirm,
     memory,
+    order_query,
     place_order,
     recommend,
     retrieve,
@@ -27,6 +28,10 @@ def _after_route(state: AgentState) -> str:
         return "shopping"
     if intent == "memory":
         return "memory"
+    if intent == "order_search":
+        return "order_search"
+    if intent == "order_summary":
+        return "order_summary"
     if intent == "cancel":
         return "cancel"
     return "end"
@@ -47,6 +52,9 @@ def build_graph(checkpointer=None):
     g.add_node("clarify", clarify.clarify_node)
     g.add_node("load_memory", memory.load_memory_node)
     g.add_node("capture_memory", memory.capture_memory_node)
+    g.add_node("parse_order_query", order_query.parse_order_query_node)
+    g.add_node("query_orders", order_query.query_orders_node)
+    g.add_node("summarize_orders", order_query.summarize_orders_node)
     g.add_node("route", route.route_node)
     g.add_node("retrieve", retrieve.retrieve_node)
     g.add_node("recommend", recommend.recommend_node)
@@ -57,8 +65,19 @@ def build_graph(checkpointer=None):
     g.add_edge("load_memory", "route")
     g.add_conditional_edges(
         "route", _after_route,
-        {"shopping": "clarify", "memory": "capture_memory", "cancel": END, "end": END},
+        {"shopping": "clarify", "order_search": "parse_order_query", "order_summary": "parse_order_query", "memory": "capture_memory", "cancel": END, "end": END},
     )
+    g.add_conditional_edges(
+        "parse_order_query",
+        lambda state: "clarify" if state.get("order_clarification") else "query",
+        {"clarify": END, "query": "query_orders"},
+    )
+    g.add_conditional_edges(
+        "query_orders",
+        lambda state: "summary" if state.get("intent") == "order_summary" and not state.get("order_error") else "end",
+        {"summary": "summarize_orders", "end": END},
+    )
+    g.add_edge("summarize_orders", END)
     g.add_edge("clarify", "capture_memory")
     g.add_conditional_edges("capture_memory", _after_capture, {"retrieve": "retrieve", "end": END})
     g.add_edge("retrieve", "recommend")

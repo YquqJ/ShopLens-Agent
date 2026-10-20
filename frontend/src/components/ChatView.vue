@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
 import RecommendationCard from './RecommendationCard.vue'
+import OrderQueryResults from './OrderQueryResults.vue'
 
 const store = useChatStore()
 const scrollEl = ref<HTMLElement>()
@@ -93,6 +94,18 @@ watch(() => store.activeSession.turns.length, scrollToBottom)
 
       <!-- 推荐结果 + 比价表 + HITL -->
       <RecommendationCard v-if="turn.recommendation?.items.length" :turn="turn" />
+      <div v-if="turn.orderClarification" class="msg agent">
+        <div class="bubble">{{ turn.orderClarification }}</div>
+      </div>
+      <div v-if="turn.orderError" class="msg agent">
+        <div class="bubble" style="color:var(--destructive)">订单查询失败：{{ turn.orderError }}</div>
+      </div>
+      <div v-if="turn.orderQuery && !turn.orderClarification && !turn.orderError" class="msg agent">
+        <div class="bubble order-query-bubble">
+          <div class="voice">订单查询 · {{ turn.orderQuery.label }}</div>
+          <OrderQueryResults :results="turn.orderResults" :summary="turn.orderSummary" :query-label="turn.orderQuery.label" />
+        </div>
+      </div>
       <div v-else-if="turn.recommendation?.summary" class="msg agent">
         <div class="avatar">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a4 4 0 0 1 4 4c0 .83-.26 1.6-.7 2.24a6 6 0 0 1 4.3 5.76v1a1 1 0 0 1-1 1H5.4a1 1 0 0 1-1-1v-1a6 6 0 0 1 4.3-5.76A3.98 3.98 0 0 1 8 7a4 4 0 0 1 4-4z"/></svg>

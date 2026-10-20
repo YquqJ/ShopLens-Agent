@@ -78,6 +78,7 @@ export interface OrderResult {
   sku_id?: string
   order_number?: string
   title?: string
+  category?: string | null
   image_url?: string | null
   created_at?: string | null
   platform?: string
@@ -85,6 +86,24 @@ export interface OrderResult {
   status?: string
   order_intent_id?: string
   url?: string | null
+}
+
+export interface OrderQuery {
+  start_at: string
+  end_at: string
+  label: string
+  keyword?: string | null
+  category?: string | null
+  platform?: string | null
+  query_type: 'search' | 'summary'
+  group_by?: 'category' | 'platform' | null
+}
+
+export interface OrderSummary {
+  order_count: number
+  total_amount: number
+  average_order_amount: number
+  groups: Array<{ key: string; order_count: number; total_amount: number }>
 }
 
 export interface FunnelOrder {
@@ -160,6 +179,11 @@ export interface ConversationDetail {
   draft_order: DraftOrder | null
   order: OrderResult | null
   order_history: OrderHistoryEntry[]
+  order_query?: OrderQuery | null
+  order_results?: OrderResult[]
+  order_summary?: OrderSummary | null
+  order_clarification?: string | null
+  order_error?: string | null
   price_raised: boolean
   awaiting_hitl: boolean
 }

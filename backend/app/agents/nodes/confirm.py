@@ -18,6 +18,7 @@ def _draft(item: dict, quote: dict) -> dict:
     return {
         "sku_id": item["sku_id"],
         "title": item["title"],
+        "category": item.get("category"),
         "url": item.get("url", ""),
         "image_url": item.get("image_url", ""),
         "catalog_price": item.get("catalog_price"),
@@ -51,6 +52,7 @@ def _real_item(candidate: dict) -> dict:
     return {
         "sku_id": candidate["sku_id"],
         "title": candidate.get("title") or "",
+        "category": candidate.get("category"),
         "url": candidate.get("url") or "",
         "image_url": candidate.get("image_url") or candidate.get("picture") or "",
         "catalog_price": candidate.get("catalog_price") or candidate.get("page_price"),
