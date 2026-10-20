@@ -8,7 +8,7 @@ import re
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.db.models import Conversation, Order, User
 from app.db.session import async_session_factory
@@ -228,4 +228,70 @@ async def search_orders(
     async with async_session_factory() as session:
         result = await session.execute(stmt)
         return [_serialize_query_order(order) for order in result.scalars().all()]
+
+
+async def search_orders_page(
+    *,
+    page: int = 1,
+    page_size: int = 20,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    keyword: str | None = None,
+    category: str | None = None,
+    profile_key: str | None = None,
+) -> dict:
+    """检索订单列表并返回分页元数据和当前画像可用的品类。"""
+    filters = [Order.status == "placed"]
+    if start_at is not None:
+        filters.append(Order.created_at >= start_at)
+    if end_at is not None:
+        filters.append(Order.created_at < end_at)
+    if profile_key:
+        filters.append(User.external_id == profile_key)
+    if keyword:
+        filters.append(Order.title_snapshot.ilike(f"%{keyword}%"))
+    if category:
+        filters.append(or_(
+            Order.category_snapshot == category,
+            Order.title_snapshot.ilike(f"%{category}%"),
+        ))
+
+    orders_stmt = (
+        select(Order)
+        .join(Conversation, Order.conversation_id == Conversation.id)
+        .join(User, Conversation.user_id == User.id)
+        .where(*filters)
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    count_stmt = (
+        select(func.count(Order.id))
+        .join(Conversation, Order.conversation_id == Conversation.id)
+        .join(User, Conversation.user_id == User.id)
+        .where(*filters)
+    )
+    category_filters = [Order.status == "placed", Order.category_snapshot.is_not(None)]
+    if profile_key:
+        category_filters.append(User.external_id == profile_key)
+    categories_stmt = (
+        select(Order.category_snapshot)
+        .join(Conversation, Order.conversation_id == Conversation.id)
+        .join(User, Conversation.user_id == User.id)
+        .where(*category_filters)
+        .distinct()
+        .order_by(Order.category_snapshot)
+    )
+
+    async with async_session_factory() as session:
+        result = await session.execute(orders_stmt)
+        total = int((await session.scalar(count_stmt)) or 0)
+        categories = [value for value in (await session.scalars(categories_stmt)).all() if value]
+        return {
+            "items": [_serialize_query_order(order) for order in result.scalars().all()],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "categories": categories,
+        }
 
