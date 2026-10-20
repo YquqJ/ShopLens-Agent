@@ -1,4 +1,4 @@
-"""下单节点：最终锁价后落库生成订单，并追加可恢复的订单卡片记录。"""
+"""下单节点：按确认时商品快照落库，并追加可恢复的订单卡片记录。"""
 from langchain_core.runnables import RunnableConfig
 
 from app.agents.state import AgentState

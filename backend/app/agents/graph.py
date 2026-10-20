@@ -3,7 +3,7 @@
 
 单 Agent StateGraph 让共享状态、澄清分支和 HITL 确认都能被 checkpointer
 持久化；真实商品事实与知识图谱证据在 recommend 前完成增强，确认后只做一次
-模拟订单幂等落库，不再执行仿真比价或二次锁价。
+模拟订单幂等落库。
 """
 from langgraph.graph import END, START, StateGraph
 from app.agents.nodes import (

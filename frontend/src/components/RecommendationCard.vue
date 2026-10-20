@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import type { Turn } from '../stores/chat'
-import type { NormalizedItem, PriceInsight, Quote, RecommendItem } from '../api/types'
+import type { PriceInsight, RecommendItem } from '../api/types'
 import OrderCard from './OrderCard.vue'
 
 const props = defineProps<{ turn: Turn }>()
@@ -41,28 +41,12 @@ function fmt(v: number | undefined | null): string {
   return `¥${Number.isInteger(v) ? v : v.toFixed(2)}`
 }
 
-// 归一结果按 sku_id 索引，取 best 报价 + 三源 quotes（比价表 / 原价划线用）
-const bySku = computed<Record<string, NormalizedItem>>(() => {
-  const m: Record<string, NormalizedItem> = {}
-  for (const n of props.turn.normalized) m[n.sku_id] = n
-  return m
-})
-
 // HITL 候选选择：用户点卡片后才允许确认下单
 const selectedSkuId = ref('')
 const selectedPlatform = ref('')
 const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value))
-const selectedQuotes = computed<Quote[]>(() => bySku.value[selectedSkuId.value]?.quotes ?? [])
-const selectedBest = computed(() => bySku.value[selectedSkuId.value]?.best?.platform ?? '')
-const selectedQuote = computed<Quote | null>(
-  () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
-)
 const bestItem = computed(() => rec.value.items.find((item) => item.sku_id === rec.value.best_sku_id))
 const selectionDisabled = computed(() => ['placed', 'cancelled'].includes(props.turn.order?.status ?? ''))
-
-function isBestCandidate(item: RecommendItem, index: number): boolean {
-  return rec.value.best_sku_id ? item.sku_id === rec.value.best_sku_id : index === 0
-}
 
 function candidateLabel(item: RecommendItem): string {
   const index = rec.value.items.findIndex((candidate) => candidate.sku_id === item.sku_id)
@@ -94,7 +78,7 @@ function selectSku(item: RecommendItem): void {
   // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
   if (selectedSkuId.value === skuId) return
   selectedSkuId.value = skuId
-  selectedPlatform.value = selectedBest.value
+  selectedPlatform.value = item.platform
   store.trackClick(skuId, props.turn.id)
 }
 
@@ -109,7 +93,7 @@ interface HitlSummary {
   eta_days: number
   previous_final_price?: number
 }
-// 首轮用所选候选/平台的报价；涨价重确认用锁价后的 draft
+// 首轮使用所选候选的真实源价格；订单草稿由服务端事实构建。
 const summary = computed<HitlSummary | null>(() => {
   if (props.turn.priceRaised && props.turn.draftOrder) {
     const d = props.turn.draftOrder
@@ -121,9 +105,7 @@ const summary = computed<HitlSummary | null>(() => {
       previous_final_price: d.previous_final_price,
     }
   }
-  const q = selectedQuote.value
   const it = selectedItem.value
-  if (q && it) return { title: it.title, platform: q.platform, final_price: q.final_price, eta_days: q.eta_days }
   if (it) return { title: it.title, platform: it.platform, final_price: it.final_price, eta_days: 0 }
   return null
 })
@@ -138,12 +120,6 @@ const priceChange = computed(() => {
 
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100
-}
-
-function origPrice(item: RecommendItem): number | null {
-  const b = bySku.value[item.sku_id]?.best
-  if (!b || b.price === b.final_price) return null
-  return b.price
 }
 
 async function confirm(): Promise<void> {
@@ -162,7 +138,7 @@ async function cancel(): Promise<void> {
 
     <!-- 候选商品卡片（点击埋点） -->
     <div
-      v-for="(item, idx) in rec.items"
+      v-for="item in rec.items"
       :key="item.sku_id"
       class="cand"
       :class="{ selected: selectedSkuId === item.sku_id && !selectionDisabled, 'selection-disabled': selectionDisabled }"
@@ -192,7 +168,6 @@ async function cancel(): Promise<void> {
         </div>
         <div class="price">
           {{ fmt(item.final_price) }}
-          <span v-if="origPrice(item) != null" class="orig">{{ fmt(origPrice(item)) }}</span>
         </div>
         <a
           v-if="item.url"

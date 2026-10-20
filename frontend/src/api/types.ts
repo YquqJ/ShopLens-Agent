@@ -1,12 +1,5 @@
 // SSE 事件负载类型 —— 对应 backend/app/api/chat.py 的 _sse 分帧 与 各节点返回结构
 
-export type SourceMode = 'mock' | 'real'
-
-export interface SourceModes {
-  mock: boolean
-  real: boolean
-}
-
 export interface Preferences {
   category: string | null
   budget: number | null
@@ -28,34 +21,6 @@ export interface Candidate {
   stock: number
   image_url: string
   score: number
-}
-
-export interface Coupon {
-  amount: number
-  threshold: number
-}
-
-export interface Quote {
-  platform: string
-  price: number
-  coupon: Coupon | null
-  discount: number
-  shipping_fee: number
-  eta_days: number
-  final_price: number
-  total_cost: number
-}
-
-export interface NormalizedItem {
-  sku_id: string
-  title: string
-  category: string | null
-  attributes: Record<string, string>
-  image_url?: string
-  url?: string
-  quotes: Quote[]
-  best: Quote
-  final_price: number
 }
 
 export interface RecommendItem {
@@ -189,7 +154,6 @@ export interface ConversationDetail {
   preferences: Preferences
   profile_preferences: ProfilePreferences
   memory_events: MemoryEvent[]
-  normalized: NormalizedItem[]
   recommendation: Recommendation | null
   recommendation_intro: string
   recommendation_history: RecommendationHistoryEntry[]

@@ -103,7 +103,6 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
         "preferences": values.get("preferences") or {},
         "profile_preferences": current_profile,
         "memory_events": values.get("memory_events") or [],
-        "normalized": values.get("normalized") or [],
         "recommendation": rec,
         "recommendation_intro": values.get("recommendation_intro") or "",
         "recommendation_history": values.get("recommendation_history") or [],

@@ -1,7 +1,7 @@
 // Pinia 会话 store：会话列表 + 每轮导购的 SSE 事件流状态机。
 //
 // 一轮导购 = 用户一句话 → POST /chat 返回整条 SSE 流（clarify→…→recommend→interrupt），
-// 前端把 node/interrupt/done/error 四类事件逐步落到当前 Turn 上，驱动消息气泡 + 比价表 + HITL + Trace 抽屉。
+// 前端把 node/interrupt/done/error 四类事件逐步落到当前 Turn 上，驱动消息气泡 + 推荐卡 + HITL + Trace 抽屉。
 import { reactive } from 'vue'
 import { defineStore } from 'pinia'
 import {
@@ -10,22 +10,18 @@ import {
   fetchConversation,
   fetchConversations,
   fetchProfilePreferences,
-  fetchSourceModes,
   recordEvent,
   resumeStream,
 } from '../api/client'
 import type {
   ConversationDetail,
   DraftOrder,
-  NormalizedItem,
   OrderResult,
   MemoryEvent,
   Preferences,
   ProfilePreferences,
   Recommendation,
   SSEEvent,
-  SourceMode,
-  SourceModes,
 } from '../api/types'
 
 export interface TraceNode {
@@ -43,7 +39,6 @@ export interface Turn {
   agentReply: string
   agentReplyUrl: string
   preferences: Preferences | null
-  normalized: NormalizedItem[]
   recommendation: Recommendation | null
   recommendationIntro: string
   degradedSources: string[]
@@ -126,7 +121,6 @@ function newTurn(user: string, ts?: number, id?: string): Turn {
     agentReply: '',
     agentReplyUrl: '',
     preferences: null,
-    normalized: [],
     recommendation: null,
     recommendationIntro: '',
     degradedSources: [],
@@ -174,7 +168,6 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
   const last = turns.at(-1)
   if (last) {
     last.preferences = d.preferences && Object.keys(d.preferences).length ? d.preferences : null
-    last.normalized = d.normalized ?? []
     const resolved = d.order?.status === 'placed' || d.order?.status === 'cancelled'
     last.draftOrder = resolved ? null : d.draft_order
     last.priceRaised = d.price_raised
@@ -209,7 +202,7 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
 }
 
 function pushTrace(turn: Turn, name: string, status: TraceNode['status'], extra?: string): void {
-  // 复用同名节点：interrupt 后 resume 会再发 lock_price/place_order，直接更新已存在的待执行项
+  // 复用同名节点：interrupt 后 resume 会再次更新下单节点状态。
   const existing = turn.trace.find((n) => n.name === name)
   const meta = NODE_META[name] ?? { label: name, desc: '' }
   const desc = extra ? `${meta.desc}${extra}` : meta.desc
@@ -237,8 +230,6 @@ export const useChatStore = defineStore('chat', {
       loadedIds: [] as string[],
       profilePreferences: {} as ProfilePreferences,
       memoryEvents: [] as MemoryEvent[],
-      sourceMode: 'real' as SourceMode,
-      sourceModes: { mock: false, real: true } as SourceModes,
     }
   },
   getters: {
@@ -260,7 +251,6 @@ export const useChatStore = defineStore('chat', {
     },
     // 启动时从后端拉会话列表，回填左侧 rail 并加载最近一条
     async hydrate(): Promise<void> {
-      await this.refreshSourceModes()
       try {
         await this.refreshProfilePreferences()
       } catch (e) {
@@ -304,19 +294,6 @@ export const useChatStore = defineStore('chat', {
         console.error('偏好记忆加载失败', e)
       }
     },
-    async refreshSourceModes(): Promise<void> {
-      try {
-        const modes = await fetchSourceModes()
-        this.sourceModes = modes
-        if (!modes[this.sourceMode]) this.sourceMode = modes.real ? 'real' : 'mock'
-      } catch (e) {
-        console.error('数据源模式加载失败', e)
-      }
-    },
-    setSourceMode(mode: SourceMode): void {
-      if (!this.sourceModes[mode]) return
-      this.sourceMode = mode
-    },
     // 删除会话：后端删行 + 本地移除；删的是当前会话则切到最近一条或新建空会话
     async deleteSession(id: string): Promise<void> {
       await deleteConversation(id)
@@ -341,7 +318,6 @@ export const useChatStore = defineStore('chat', {
         session.id,
         text,
         (ev) => this.handleEvent(session, turn, ev),
-        this.sourceMode,
       ))
     },
     async resumeHitl(turnId: string, confirm: boolean, skuId?: string, platform?: string): Promise<void> {
@@ -411,10 +387,7 @@ export const useChatStore = defineStore('chat', {
         }
         case 'retrieve': {
           const candidates = (data.candidates as unknown[]) ?? []
-          const isRealSource = Boolean(data.zdm_mode)
-          const detail = isRealSource
-            ? ` · MCP 真实源召回 ${candidates.length} 条商品`
-            : ` · Chroma 向量召回 ${candidates.length} 个 SKU`
+          const detail = ` · MCP 真实源召回 ${candidates.length} 条商品`
           pushTrace(turn, 'retrieve', 'done', detail)
           break
         }
@@ -450,7 +423,7 @@ export const useChatStore = defineStore('chat', {
         turn.draftOrder = (data as { draft_order?: DraftOrder }).draft_order ?? null
         turn.awaitingHitl = true
         turn.streaming = false
-        // 只标 confirm 等待；lock_price/place_order 在 resume 后真正执行时才会进轨迹，
+        // 只标 confirm 等待；place_order 在 resume 后真正执行时才会进轨迹，
         // 避免「取消/涨价」分支未执行却残留 pending 节点导致不闭合
         pushTrace(turn, 'confirm', 'waiting', ' · 等待确认')
       }

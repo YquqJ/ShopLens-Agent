@@ -1,7 +1,7 @@
 """端到端任务完成率评测。
 
 评测口径：每条任务预先声明期望的业务结果，由完整 StateGraph 执行并按最终状态判定，
-不使用 LLM-as-judge。脚本同时保留节点轨迹和失败原因，便于定位是澄清、检索、比价还是下单失败。
+不使用 LLM-as-judge。脚本同时保留节点轨迹和失败原因，便于定位是澄清、检索、知识增强还是下单失败。
 重复运行：TASK_EVAL_REPEATS=3 uv run python -m app.eval.task_completion
 包含真实下单写库；需先配置隔离评测库，再显式设置 TASK_EVAL_ALLOW_DB_WRITES=1。
 """
@@ -186,21 +186,12 @@ async def _run_task(graph, tools: dict, task: dict) -> dict:
         if task.get("resume") is not None:
             if not interrupted:
                 raise RuntimeError("任务预期进入确认中断，但未发现 interrupt")
-            # 价格上涨时图会再次进入 confirm；正向确认任务最多允许有限次重确认，
-            # 避免评测因价格波动陷入无限循环。
-            for _ in range(3):
-                resume = {"confirm": bool(task["resume"])}
-                async for event in graph.astream(Command(resume=resume), config, stream_mode="updates"):
-                    for node, update in event.items():
-                        if node == "__interrupt__" or not isinstance(update, dict):
-                            continue
-                        _merge_observation(observation, update, node)
-                snapshot = await graph.aget_state(config)
-                interrupted = bool(snapshot.interrupts)
-                if not interrupted:
-                    break
-            if interrupted:
-                raise RuntimeError("确认流程超过最大重确认次数")
+            resume = {"confirm": bool(task["resume"])}
+            async for event in graph.astream(Command(resume=resume), config, stream_mode="updates"):
+                for node, update in event.items():
+                    if node == "__interrupt__" or not isinstance(update, dict):
+                        continue
+                    _merge_observation(observation, update, node)
 
         snapshot = await graph.aget_state(config)
         values = snapshot.values or {}

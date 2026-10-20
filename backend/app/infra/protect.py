@@ -2,8 +2,7 @@
 
 设计决策：
 - 在 MCP 工具外层统一包装（而非散落在各节点），源状态全局共享，节点只做编排；
-- source 从工具名解析：price_jd_get_quote → jd，coupon_get_coupons → coupon，
-  logistics_get_delivery → logistics——三者独立熔断；
+- source 从工具名和描述解析，为值得买商品检索、知识图谱等工作负载隔离熔断；
 - 熔断打开 → 直接抛 SourceError（不触发子进程）；重试耗尽 → record_failure + SourceError；
 - SourceRegistry 持有每源 breaker、重试配置、错误预算，protect() 产出一份 name→工具 映射。
 """

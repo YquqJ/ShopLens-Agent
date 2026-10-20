@@ -44,11 +44,11 @@ def test_recommendation_task_requires_a_non_empty_recommendation() -> None:
 def test_order_task_requires_successful_order_placement() -> None:
     assert task_succeeded(
         {"type": "order"},
-        {"order_status": "placed", "nodes": ["confirm", "lock_price", "place_order"]},
+        {"order_status": "placed", "nodes": ["confirm", "place_order"]},
     ) is True
     assert task_succeeded(
         {"type": "order"},
-        {"order_status": "confirmed", "nodes": ["confirm", "lock_price"]},
+        {"order_status": "confirmed", "nodes": ["confirm"]},
     ) is False
 
 

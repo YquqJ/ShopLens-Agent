@@ -1,8 +1,7 @@
 """ORM 模型：Product / User / Conversation / Order / ConversionEvent。
 
 设计决策：
-- Product 是商品主数据（价格/库存/属性），Postgres 是唯一事实来源；
-  Chroma 只存「向量 + 最小元数据」，检索命中后用 sku_id 回 Postgres 取权威数据；
+- Product 是历史转化看板使用的商品主数据；
 - 金额用 Numeric(10,2) 固化落库，杜绝 float 精度问题与 LLM 现编；
 - User/Conversation/Order/ConversionEvent 为 M4 下单闭环与 M8 转化漏斗预留，
   M1 先落表结构（init_db 建表生效），字段随对应里程碑扩充。

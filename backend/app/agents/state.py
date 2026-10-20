@@ -67,9 +67,7 @@ class AgentState(TypedDict):
     comparison: dict
     order_intent_id: str | None
     zdm_mode: bool             # 值得买真实源模式
-    quotes: list[dict]
-    normalized: list[dict]
-    degraded_sources: list[str]   # M6：本次比价中熔断/失败的平台（"暂不可比"，供推荐透出）
+    degraded_sources: list[str]
     recommendation: dict
     recommendation_intro: str
     draft_order: dict | None
@@ -103,8 +101,6 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "comparison": {},
         "order_intent_id": None,
         "zdm_mode": False,
-        "quotes": [],
-        "normalized": [],
         "degraded_sources": [],
         "recommendation": {},
         "recommendation_intro": "",

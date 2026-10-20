@@ -2,9 +2,7 @@
 
 设计决策：
 - 用 LangGraph interrupt 做下单确认的「人在回路」，checkpointer 负责断点持久化；
-- 方案 B：用户在候选(sku_id)/平台(platform)间做选择，confirm 按选择重建 draft；
-  仅首轮确认应用选择；涨价重确认（lock_attempts>0）保留锁价后的 draft，不再重建；
-- resume 值为 {"confirm": bool, "sku_id"?: str, "platform"?: str}，取消则 draft_order 置 None 走 END。
+- resume 值为 {"confirm": bool, "sku_id"?: str}，取消则 draft_order 置 None 走 END。
 """
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
@@ -35,23 +33,6 @@ def _draft(item: dict, quote: dict) -> dict:
 def _build_draft(item: dict) -> dict:
     """默认草稿：取该候选的综合最优解（best）。"""
     return _draft(item, item["best"])
-
-
-def _resolve_selection(normalized: list[dict], decision: dict) -> dict | None:
-    """按用户的候选/平台选择重建 draft；选择不合法（sku 或 platform 不存在）返回 None。"""
-    sku_id = decision.get("sku_id")
-    if not sku_id:
-        return None
-    item = next((n for n in normalized if n["sku_id"] == sku_id), None)
-    if item is None:
-        return None
-    platform = decision.get("platform")
-    if platform:
-        quote = next((q for q in item.get("quotes", []) if q["platform"] == platform), None)
-        if quote is None:
-            return None
-        return _draft(item, quote)
-    return _build_draft(item)
 
 
 def _real_quote(candidate: dict) -> dict:
@@ -94,18 +75,11 @@ def _build_real_draft(candidates: list[dict], recommendation: dict, decision: di
 
 
 async def confirm_node(state: AgentState) -> dict:
-    normalized = state.get("normalized", [])
     candidates = state.get("candidates", [])
     recommendation = state.get("recommendation") or {}
-    real_mode = bool(candidates and not normalized and recommendation.get("items"))
-    if not normalized and not real_mode:
+    if not candidates or not recommendation.get("items"):
         return {"draft_order": None, "order": {"status": "skipped"}}
-    re_confirm = state.get("lock_attempts", 0) > 0 and bool(state.get("draft_order"))
-    if re_confirm:
-        draft = state["draft_order"]          # 涨价重确认：用锁价后的最新价
-    else:
-        draft = (_build_real_draft(candidates, recommendation)
-                 if real_mode else _build_draft(normalized[0]))
+    draft = _build_real_draft(candidates, recommendation)
 
     if draft is None:
         return {"draft_order": None, "order": {"status": "invalid_selection"}}
@@ -121,14 +95,8 @@ async def confirm_node(state: AgentState) -> dict:
                 "order": {"status": "cancelled"},
             }],
         }
-    # 方案 B：仅首轮确认应用「候选/平台选择」，重确认保留锁定价
-    if not re_confirm and isinstance(decision, dict):
-        has_selection = bool(decision.get("sku_id") or decision.get("platform"))
-        selected = (
-            _build_real_draft(candidates, recommendation, decision)
-            if real_mode and has_selection
-            else _resolve_selection(normalized, decision) if has_selection else draft
-        )
+    if isinstance(decision, dict) and decision.get("sku_id"):
+        selected = _build_real_draft(candidates, recommendation, decision)
         if selected is None:
             return {
                 "draft_order": None,

@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage
 from app.agents.graph import build_graph
 from app.agents.nodes import clarify, memory, route
 from app.agents.nodes.memory import build_effective_preferences, parse_memory_command
-from app.api.chat import ChatRequest, ResumeRequest, _make_cfg, source_modes
+from app.api.chat import ChatRequest, ResumeRequest, _make_cfg
 
 
 def test_parse_memory_command_saves_only_explicit_durable_catalog_preferences() -> None:
@@ -128,11 +128,9 @@ def test_effective_preferences_include_gender_without_size_memory() -> None:
     }
 
 
-def test_clarify_requires_gender_but_accepts_saved_gender_preference() -> None:
-    assert clarify._missing({"category": "衬衫", "budget": 300}) == ["男款还是女款"]
-    assert clarify._missing({
-        "category": "衬衫", "budget": 300, "preferred_genders": ["女款"],
-    }) == []
+def test_clarify_only_requires_category_and_budget() -> None:
+    assert clarify._missing({"category": "衬衫"}) == ["预算大概多少"]
+    assert clarify._missing({"category": "衬衫", "budget": 300}) == []
 
 
 @pytest.mark.anyio
@@ -170,29 +168,15 @@ def test_chat_and_resume_requests_accept_optional_browser_profile_id() -> None:
     assert ResumeRequest(thread_id="thread-1", confirm=True, profile_id="browser-1").profile_id == "browser-1"
 
 
-def test_chat_request_defaults_to_mock_source_and_passes_explicit_mode() -> None:
-    assert ChatRequest(message="hi", thread_id="thread-1", profile_id="browser-1").source_mode == "mock"
-
-
-def test_make_cfg_carries_source_mode_without_changing_shared_mcp_tools() -> None:
+def test_make_cfg_carries_shared_mcp_tools() -> None:
     from types import SimpleNamespace
 
     tools = {"tool": object()}
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(mcp_tools=tools)))
 
-    cfg = _make_cfg(request, "thread-1", "browser-1", source_mode="real")
+    cfg = _make_cfg(request, "thread-1", "browser-1")
 
-    assert cfg["configurable"]["source_mode"] == "real"
     assert cfg["configurable"]["mcp_tools"] is tools
-
-
-@pytest.mark.anyio
-async def test_source_modes_only_advertises_real_when_api_key_is_configured(monkeypatch) -> None:
-    monkeypatch.setattr("app.api.chat.settings.ZDM_API_KEY", "")
-    assert await source_modes() == {"mock": True, "real": False}
-
-    monkeypatch.setattr("app.api.chat.settings.ZDM_API_KEY", "test-key")
-    assert await source_modes() == {"mock": True, "real": True}
 
 
 @pytest.mark.anyio

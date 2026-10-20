@@ -1,7 +1,6 @@
 """检索节点：按偏好召回候选商品。
 
-真实导购路径通过值得买 MCP 召回商品，并保留 normalized 兼容结构；
-随后由知识图谱节点增强证据，推荐节点只基于服务端事实做比较。
+真实导购路径通过值得买 MCP 召回商品；随后由知识图谱节点增强证据，推荐节点只基于服务端事实做比较。
 """
 import json
 import math
@@ -10,8 +9,6 @@ from langchain_core.runnables import RunnableConfig
 
 from app.agents.state import AgentState
 from app.agents.nodes.memory import build_effective_preferences
-from app.core.config import settings
-from app.services import catalog
 from app.services.product_evidence import build_zdm_evidence
 
 _TOP_K = 5
@@ -21,36 +18,8 @@ _MALL_IDS = {
     "pdd": 8645, "拼多多": 8645,
 }
 
-# 闭集硬约束字段（进 Chroma where）：品类/颜色/风格/材质/场景/版型/性别
-_CLOSED_FIELDS = ("category", "color", "style", "material", "scene", "fit", "gender")
-# 语义召回文本的字段顺序（回退拼接用，保持「颜色/风格/材质/品类」的旧观感）
+# 真实源查询文本的字段顺序。
 _SEMANTIC_ORDER = ("gender", "color", "style", "material", "category", "scene", "fit")
-
-
-def _build_filters(prefs: dict) -> dict:
-    """闭集硬约束 → Chroma where：会话字段优先（单值），缺失才用长期偏好（列表 → $in）。"""
-    filters: dict = {}
-    for key in _CLOSED_FIELDS:
-        value = prefs.get(key)
-        if value not in (None, "", []):
-            filters[key] = value
-    for key, preferred in (
-        ("color", "preferred_colors"),
-        ("style", "preferred_styles"),
-        ("material", "preferred_materials"),
-        ("gender", "preferred_genders"),
-    ):
-        if key not in filters and prefs.get(preferred):
-            filters[key] = prefs[preferred]
-    return filters
-
-
-def _build_semantic_query(prefs: dict) -> str:
-    """语义召回文本：优先功能词 requirements，空则回退到闭集字段拼接。"""
-    if prefs.get("requirements"):
-        return str(prefs["requirements"])
-    parts = [str(prefs[k]) for k in _SEMANTIC_ORDER if prefs.get(k)]
-    return " ".join(parts) if parts else str(prefs.get("category", ""))
 
 
 def _build_real_query(prefs: dict) -> str:
@@ -62,20 +31,11 @@ def _build_real_query(prefs: dict) -> str:
     return " ".join(parts)
 
 
-def _zhidemai_enabled() -> bool:
-    """真实源开关：显式开启且已配 ZDM_API_KEY 才启用。
-
-    从 settings 读（.env 经 pydantic-settings 只进 settings，不进 os.environ）。
-    """
-    return bool(settings.SHOPLENS_ZHIDEMAI_ENABLED) and bool(settings.ZDM_API_KEY)
-
-
 def _find_real_search_tool(tools: dict):
     """按工具名和描述发现官方 Haina MCP 的商品搜索工具。"""
     preferred = (
         tools.get("haina_product_search_pro")
         or tools.get("haina_search_products")
-        or tools.get("zhidemai_search_real_products")
     )
     if preferred is not None:
         return preferred
@@ -132,15 +92,6 @@ def build_real_search_payload(prefs: dict, *, query: str | None = None) -> dict:
     return payload
 
 
-def _source_mode(config: RunnableConfig | None) -> str:
-    """请求显式指定模式时优先使用；旧调用未传时兼容环境变量开关。"""
-    configurable = (config or {}).get("configurable", {})
-    mode = configurable.get("source_mode")
-    if mode in {"mock", "real"}:
-        return mode
-    return "real" if _zhidemai_enabled() else "mock"
-
-
 def _unwrap_mcp_result(result):
     """兼容 LangChain MCP 返回的 text content、JSON 字符串和已解析对象。"""
     if (
@@ -195,69 +146,22 @@ def _zhidemai_to_candidates(items: list[dict]) -> list[dict]:
     return candidates
 
 
-def _zhidemai_to_normalized(items: list[dict]) -> list[dict]:
-    """Temporary adapter for the legacy recommendation node during graph migration."""
-    normalized: list[dict] = []
-    for candidate in _zhidemai_to_candidates(items):
-        price = candidate["page_price"]
-        mall = candidate["mall"] or "未知商城"
-        quote = {
-            "platform": mall,
-            "price": price,
-            "coupon": None,
-            "discount": 0,
-            "shipping_fee": 0,
-            "eta_days": 0,
-            "final_price": price,
-            "total_cost": price,
-        }
-        normalized.append({
-            "sku_id": candidate["sku_id"],
-            "title": candidate["title"],
-            "category": candidate["category"],
-            "attributes": candidate["attributes"],
-            "image_url": candidate["image_url"],
-            "url": candidate["url"],
-            "quotes": [quote],
-            "best": quote,
-            "final_price": price,
-        })
-    return normalized
-
-
 async def retrieve_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     prefs = build_effective_preferences(
         state.get("preferences") or {}, state.get("profile_preferences") or {},
     )
 
-    if _source_mode(config) == "real":
-        # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话
-        query = _build_real_query(prefs) or (
-            state["messages"][-1].content if state.get("messages") else ""
-        )
-        tools = (config or {}).get("configurable", {}).get("mcp_tools", {})
-        search_tool = _find_real_search_tool(tools)
-        if search_tool is None:
-            raise RuntimeError("真实数据源未加载：未发现 Haina 商品搜索 MCP 工具")
-        payload = build_real_search_payload(prefs, query=query)
-        result = _unwrap_mcp_result(await search_tool.ainvoke(payload))
-        items = _real_items(result)
-        candidates = _zhidemai_to_candidates(items)
-        normalized = _zhidemai_to_normalized(items)
-        product_evidence = {candidate["sku_id"]: candidate["evidence"] for candidate in candidates}
-        return {
-            "candidates": candidates,
-            "product_evidence": product_evidence,
-            "normalized": normalized,
-            "zdm_mode": True,
-        }
-
-    filters = _build_filters(prefs)
-    semantic_q = _build_semantic_query(prefs)
-    candidates = await catalog.search(semantic_q, top_k=_TOP_K, filters=filters)
-    if not candidates:
-        # 硬过滤无命中时退回纯语义，保住「总是有结果」的体验
-        candidates = await catalog.search(semantic_q, top_k=_TOP_K)
-    # 仿真源只用于展示默认商品卡片，不向前端暴露图片地址；真实源图片仍在 normalized 中保留。
-    candidates = [dict(candidate, image_url="") for candidate in candidates]
-    return {"candidates": candidates, "zdm_mode": False}
+    # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话。
+    query = _build_real_query(prefs) or (
+        state["messages"][-1].content if state.get("messages") else ""
+    )
+    tools = (config or {}).get("configurable", {}).get("mcp_tools", {})
+    search_tool = _find_real_search_tool(tools)
+    if search_tool is None:
+        raise RuntimeError("值得买 MCP 未加载：请配置 ZDM_API_KEY")
+    payload = build_real_search_payload(prefs, query=query)
+    result = _unwrap_mcp_result(await search_tool.ainvoke(payload))
+    items = _real_items(result)
+    candidates = _zhidemai_to_candidates(items)
+    product_evidence = {candidate["sku_id"]: candidate["evidence"] for candidate in candidates}
+    return {"candidates": candidates, "product_evidence": product_evidence, "zdm_mode": True}

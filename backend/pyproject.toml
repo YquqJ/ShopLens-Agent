@@ -1,7 +1,7 @@
 [project]
 name = "shoplens-agent"
 version = "0.1.0"
-description = "ShopLens 电商售前导购单 Agent（LangGraph + MCP 多源比价）"
+description = "ShopLens 电商售前导购单 Agent（LangGraph + 值得买 MCP）"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     # Agent 编排 + MCP 工具接入（SPEC 锁定，勿随意更换）
@@ -20,8 +20,6 @@ dependencies = [
     "psycopg[binary]>=3.2.0",
     # 配置与类型
     "pydantic-settings>=2.5.0",
-    # 向量库（embedded 持久化，只做向量检索）
-    "chromadb>=0.5.15",
     # DashScope OpenAI 兼容客户端（embedding / LLM 共用）
     "openai>=1.60",
     # 可靠性：重试/退避（tenacity）+ 观测（OpenTelemetry）
