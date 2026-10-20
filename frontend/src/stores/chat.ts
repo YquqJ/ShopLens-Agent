@@ -19,6 +19,7 @@ import type {
   OrderResult,
   OrderQuery,
   OrderSummary,
+  OrderQueryHistoryEntry,
   MemoryEvent,
   Preferences,
   ProfilePreferences,
@@ -164,6 +165,10 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
       turnsById.set(cur.id, cur)
     } else if (cur) {
       const q = m.content
+      if (q === '请补充明确的时间范围，例如“昨天”“上周”或“最近 30 天”。') {
+        cur.orderClarification = q
+        continue
+      }
       if (q.endsWith('？') || q.endsWith('?')) cur.clarifyQuestion = q
       else if (q.startsWith('已选择「')) {
         const match = q.match(/^已选择「(.+?)」\n链接：(https?:\/\/\S+)$/)
@@ -205,6 +210,20 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
     const turn = turnsById.get(entry.turn_id)
     if (!turn || !entry.order) continue
     turn.order = entry.order
+  }
+
+  const orderQueries = new Map<string, OrderQueryHistoryEntry>()
+  for (const entry of d.order_query_history ?? []) {
+    orderQueries.set(entry.turn_id, entry)
+  }
+  for (const [turnId, entry] of orderQueries) {
+    const turn = turnsById.get(turnId)
+    if (!turn) continue
+    turn.orderQuery = entry.query
+    turn.orderResults = entry.results ?? []
+    turn.orderSummary = entry.summary ?? null
+    turn.orderClarification = entry.clarification ?? ''
+    turn.orderError = entry.error ?? ''
   }
 
   // 兼容旧 checkpoint：旧数据没有逐轮 history，只能把最新结果挂到最后一轮。

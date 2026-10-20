@@ -52,6 +52,7 @@ class AgentState(TypedDict):
     turn_id: str
     recommendation_history: Annotated[list[dict], operator.add]
     order_history: Annotated[list[dict], operator.add]
+    order_query_history: Annotated[list[dict], operator.add]
     order_query: dict | None
     order_results: list[dict]
     order_summary: dict | None
@@ -89,6 +90,7 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "turn_id": turn_id,
         "recommendation_history": [],
         "order_history": [],
+        "order_query_history": [],
         "order_query": None,
         "order_results": [],
         "order_summary": None,

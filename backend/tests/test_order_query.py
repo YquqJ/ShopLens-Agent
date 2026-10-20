@@ -11,7 +11,7 @@ from app.services.order_query import (
     summarize_orders,
 )
 from app.agents.nodes.route import _fast_path
-from app.agents.nodes.order_query import parse_order_query_node
+from app.agents.nodes.order_query import parse_order_query_node, query_orders_node, summarize_orders_node
 
 
 NOW = datetime(2026, 10, 21, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -94,3 +94,34 @@ async def test_order_query_node_clears_previous_query_and_asks_for_time():
     assert result["order_query"] is None
     assert result["order_results"] == []
     assert "时间范围" in result["order_clarification"]
+
+
+@pytest.mark.anyio
+async def test_order_query_history_keeps_results_by_turn(monkeypatch):
+    async def fake_search(*_args, **_kwargs):
+        return [{"order_id": 7, "title": "降噪耳机", "final_price": 299}]
+
+    monkeypatch.setattr("app.agents.nodes.order_query.order_query_service.search_orders", fake_search)
+    parsed = await parse_order_query_node({"messages": [HumanMessage("昨天买了什么")], "intent": "order_search"})
+    result = await query_orders_node(
+        {**parsed, "turn_id": "turn-1"},
+        {"configurable": {"profile_id": "profile-1"}},
+    )
+
+    assert result["order_query_history"][0]["turn_id"] == "turn-1"
+    assert result["order_query_history"][0]["results"][0]["order_id"] == 7
+
+
+@pytest.mark.anyio
+async def test_order_summary_history_contains_summary_for_same_turn():
+    result = await summarize_orders_node({
+        "turn_id": "turn-2",
+        "order_query": {
+            "label": "最近30天", "group_by": "platform",
+            "start_at": "2026-09-21T00:00:00+08:00", "end_at": "2026-10-21T00:00:00+08:00",
+        },
+        "order_results": [{"platform": "jd", "final_price": 100}],
+    })
+
+    assert result["order_query_history"][0]["turn_id"] == "turn-2"
+    assert result["order_query_history"][0]["summary"]["total_amount"] == 100.0

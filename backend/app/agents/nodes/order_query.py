@@ -1,7 +1,7 @@
 """订单查询流程节点：解析条件、检索订单、生成结构化统计。"""
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from app.agents.state import AgentState
@@ -27,7 +27,10 @@ async def parse_order_query_node(state: AgentState) -> dict:
             "order_clarification": question,
             "order_results": [],
             "order_summary": None,
-            "messages": [AIMessage(question)],
+            "order_query_history": [{
+                "turn_id": state.get("turn_id"), "query": None, "results": [],
+                "summary": None, "clarification": question, "error": None,
+            }],
         }
     query = order_query_service.normalize_order_query(text, parsed_time)
     if state.get("intent") == "order_summary":
@@ -58,8 +61,20 @@ async def query_orders_node(state: AgentState, config: RunnableConfig) -> dict:
         )
     except Exception as exc:  # noqa: BLE001
         message = "订单查询暂时不可用，请稍后重试。"
-        return {"order_error": str(exc), "order_results": [], "messages": [AIMessage(message)]}
-    return {"order_results": results, "order_error": None}
+        return {
+            "order_error": str(exc), "order_results": [],
+            "order_query_history": [{
+                "turn_id": state.get("turn_id"), "query": query, "results": [],
+                "summary": None, "clarification": None, "error": message,
+            }],
+        }
+    return {
+        "order_results": results, "order_error": None,
+        "order_query_history": [{
+            "turn_id": state.get("turn_id"), "query": query, "results": results,
+            "summary": None, "clarification": None, "error": None,
+        }],
+    }
 
 
 async def summarize_orders_node(state: AgentState) -> dict:
@@ -67,4 +82,11 @@ async def summarize_orders_node(state: AgentState) -> dict:
     summary = order_query_service.summarize_orders(
         state.get("order_results") or [], query.get("group_by")
     )
-    return {"order_summary": summary}
+    return {
+        "order_summary": summary,
+        "order_query_history": [{
+            "turn_id": state.get("turn_id"), "query": query,
+            "results": state.get("order_results") or [], "summary": summary,
+            "clarification": None, "error": None,
+        }],
+    }

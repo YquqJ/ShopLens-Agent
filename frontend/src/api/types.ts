@@ -168,6 +168,15 @@ export interface OrderHistoryEntry {
   order: OrderResult
 }
 
+export interface OrderQueryHistoryEntry {
+  turn_id: string
+  query: OrderQuery | null
+  results: OrderResult[]
+  summary: OrderSummary | null
+  clarification?: string | null
+  error?: string | null
+}
+
 export interface ConversationDetail {
   messages: HistoryMessage[]
   preferences: Preferences
@@ -179,6 +188,7 @@ export interface ConversationDetail {
   draft_order: DraftOrder | null
   order: OrderResult | null
   order_history: OrderHistoryEntry[]
+  order_query_history?: OrderQueryHistoryEntry[]
   order_query?: OrderQuery | null
   order_results?: OrderResult[]
   order_summary?: OrderSummary | null
