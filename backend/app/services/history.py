@@ -8,9 +8,9 @@
 - HITL 挂起时草稿在 snap.interrupts 载荷里（state 尚未提交 draft_order），需从载荷取回。
 """
 from langchain_core.messages import BaseMessage
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
-from app.db.models import ConversionEvent, Conversation, Order, User
+from app.db.models import Conversation, Order, User
 from app.db.session import async_session_factory
 from app.services import profile
 from app.services.order import require_conversation_owner
@@ -121,7 +121,7 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
 
 
 async def delete_conversation(graph, thread_id: str, profile_id: str) -> bool:
-    """删除会话：清关联转化事件/订单 → 删会话行 → 删 checkpointer 线程状态。"""
+    """删除会话及其关联历史数据，再清理 checkpointer 线程状态。"""
     async with async_session_factory() as session:
         result = await session.execute(
             select(Conversation)
@@ -136,7 +136,13 @@ async def delete_conversation(graph, thread_id: str, profile_id: str) -> bool:
             return False
         cid = conv.id
         # 无 ondelete cascade，先清子表再删父表，否则外键约束拒绝删除
-        await session.execute(delete(ConversionEvent).where(ConversionEvent.conversation_id == cid))
+        # 兼容旧数据库中的转化事件外键；新数据库不会再创建该表。
+        legacy_events_table = await session.scalar(text("SELECT to_regclass('public.conversion_events')"))
+        if legacy_events_table:
+            await session.execute(
+                text("DELETE FROM public.conversion_events WHERE conversation_id = :conversation_id"),
+                {"conversation_id": cid},
+            )
         await session.execute(delete(Order).where(Order.conversation_id == cid))
         await session.delete(conv)
         await session.commit()

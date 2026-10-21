@@ -2,7 +2,6 @@
 import type {
   ConversationDetail,
   ConversationSummary,
-  FunnelStats,
   OrdersPage,
   ProfilePreferences,
   SSEEvent,
@@ -105,30 +104,6 @@ export function resumeStream(
     platform,
     profile_id: getProfileId(),
   }, onEvent)
-}
-
-export async function recordEvent(
-  threadId: string,
-  eventType: 'impression' | 'click' | 'order',
-  skuId?: string,
-): Promise<void> {
-  await fetch('/api/conversion', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      thread_id: threadId,
-      profile_id: getProfileId(),
-      event_type: eventType,
-      sku_id: skuId ?? null,
-    }),
-  })
-}
-
-export async function fetchFunnel(): Promise<FunnelStats> {
-  const params = new URLSearchParams({ profile_id: getProfileId() })
-  const resp = await fetch(`/api/funnel?${params}`)
-  if (!resp.ok) throw new Error(`漏斗统计请求失败：${resp.status}`)
-  return resp.json()
 }
 
 export async function fetchOrders(filters: {

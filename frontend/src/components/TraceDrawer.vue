@@ -26,12 +26,5 @@ const shortThread = computed(() => store.activeSession.id.replace(/-/g, '').slic
         <div class="ndesc">发送一条购物需求开始跟踪节点</div>
       </div>
     </div>
-
-    <div class="trace-footer">
-      <span>数据源 <b>值得买真实 MCP</b></span>
-      <span>模型 <b>qwen-plus</b></span>
-      <span>值得买字段约束 · <b>可解释推荐</b></span>
-      <span v-if="turn?.degradedSources.length">已降级源 <b>{{ turn.degradedSources.join(' / ') }}</b></span>
-    </div>
   </aside>
 </template>

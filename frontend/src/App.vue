@@ -5,10 +5,9 @@ import SessionRail from './components/SessionRail.vue'
 import ChatView from './components/ChatView.vue'
 import Composer from './components/Composer.vue'
 import TraceDrawer from './components/TraceDrawer.vue'
-import DashboardView from './components/DashboardView.vue'
 import OrdersView from './components/OrdersView.vue'
 
-type ViewName = 'chat' | 'dashboard' | 'orders'
+type ViewName = 'chat' | 'orders'
 const view = ref<ViewName>('chat')
 const drawerOpen = ref(true)
 const store = useChatStore()
@@ -28,7 +27,6 @@ onMounted(() => { void store.hydrate() })
       <nav class="nav" aria-label="主导航">
         <button class="nav-item" :class="{ active: view === 'chat' }" @click="view = 'chat'">导购</button>
         <button class="nav-item" :class="{ active: view === 'orders' }" @click="view = 'orders'">订单</button>
-        <button class="nav-item" :class="{ active: view === 'dashboard' }" @click="view = 'dashboard'">转化看板</button>
       </nav>
       <div class="spacer"></div>
       <button v-if="view === 'chat'" class="trace-btn" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
@@ -36,16 +34,13 @@ onMounted(() => { void store.hydrate() })
       </button>
     </header>
 
-    <div class="body" :class="{ 'drawer-closed': !drawerOpen, 'dash-active': view === 'dashboard', 'orders-active': view === 'orders' }">
+    <div class="body" :class="{ 'drawer-closed': !drawerOpen, 'orders-active': view === 'orders' }">
       <SessionRail v-if="view === 'chat'" />
 
       <div class="main-col">
         <div class="content">
           <section class="view" :class="{ active: view === 'chat' }">
             <ChatView />
-          </section>
-          <section class="view" :class="{ active: view === 'dashboard' }">
-            <DashboardView :active="view === 'dashboard'" />
           </section>
           <section class="view" :class="{ active: view === 'orders' }">
             <OrdersView :active="view === 'orders'" />

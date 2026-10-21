@@ -114,22 +114,6 @@ export interface OrderSummary {
   groups: Array<{ key: string; order_count: number; total_amount: number }>
 }
 
-export interface FunnelOrder {
-  title: string
-  platform: string | null
-  final_price: number | null
-  created_at: string | null
-}
-
-export interface FunnelStats {
-  impression: number
-  click: number
-  order: number
-  click_rate: number
-  order_rate: number
-  orders: FunnelOrder[]
-}
-
 export interface SSEEvent {
   event: string
   data: Record<string, unknown>

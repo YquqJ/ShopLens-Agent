@@ -75,11 +75,10 @@ function displayDecisionText(text: string): string {
 function selectSku(item: RecommendItem): void {
   if (selectionDisabled.value) return
   const skuId = item.sku_id
-  // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
+  // 点卡片 = 选中候选：平台回落到该商品最优解。
   if (selectedSkuId.value === skuId) return
   selectedSkuId.value = skuId
   selectedPlatform.value = item.platform
-  store.trackClick(skuId, props.turn.id)
 }
 
 function hasImage(item: RecommendItem): boolean {
@@ -204,9 +203,8 @@ async function cancel(): Promise<void> {
     <div v-if="turn.draftOrder && turn.order?.status !== 'placed' && turn.order?.status !== 'cancelled'" class="hitl">
       <h3>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-        下单确认 · 人工确认
+        下单确认
       </h3>
-      <p>点击上方任一候选卡片选中商品，确认后生成模拟订单。</p>
       <div v-if="!turn.priceRaised && !selectedSkuId" class="select-hint">👆 请先点选一款候选商品，再确认下单</div>
 
       <div v-if="summary" class="order-summary">

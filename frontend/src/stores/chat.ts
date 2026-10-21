@@ -10,7 +10,6 @@ import {
   fetchConversation,
   fetchConversations,
   fetchProfilePreferences,
-  recordEvent,
   resumeStream,
 } from '../api/client'
 import type {
@@ -55,8 +54,6 @@ export interface Turn {
   trace: TraceNode[]
   streaming: boolean
   awaitingHitl: boolean
-  impressed: boolean
-  clickedSkus: string[]
   priceRaised: boolean
   error: string
   contextReset: boolean
@@ -144,8 +141,6 @@ function newTurn(user: string, ts?: number, id?: string): Turn {
     trace: [],
     streaming: true,
     awaitingHitl: false,
-    impressed: false,
-    clickedSkus: [],
     priceRaised: false,
     error: '',
     contextReset: false,
@@ -204,7 +199,6 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
     turn.recommendation = entry.recommendation
     turn.recommendationIntro = entry.intro ?? ''
     turn.degradedSources = entry.recommendation.degraded_sources ?? []
-    turn.impressed = true
   }
   for (const entry of d.order_history ?? []) {
     const turn = turnsById.get(entry.turn_id)
@@ -231,7 +225,6 @@ function hydrateTurns(d: ConversationDetail): Turn[] {
     last.recommendation = d.recommendation?.summary || d.recommendation?.items?.length ? d.recommendation : null
     last.recommendationIntro = d.recommendation_intro ?? ''
     last.degradedSources = d.recommendation?.degraded_sources ?? []
-    last.impressed = !!d.recommendation
   }
   if (last && !(d.order_history?.length)) {
     last.order = d.order
@@ -366,15 +359,6 @@ export const useChatStore = defineStore('chat', {
       turn.streaming = true
       await this.run(turn, () => resumeStream(session.id, confirm, (ev) => this.handleEvent(session, turn, ev), skuId, platform))
     },
-    trackClick(skuId: string, turnId: string): void {
-      // 每轮每 SKU 只记一次点击（点击=选中候选），避免重复点击把点击率放大失真
-      const turn = this.activeSession.turns.find((t) => t.id === turnId)
-      if (!turn || turn.clickedSkus.includes(skuId)) return
-      turn.clickedSkus.push(skuId)
-      // 漏斗「点击推荐」只统计点击👍推荐品，备选点击不计数
-      if (skuId !== turn.recommendation?.items[0]?.sku_id) return
-      void recordEvent(this.activeId, 'click', skuId)
-    },
     async run(turn: Turn, stream: () => Promise<void>): Promise<void> {
       try {
         await stream()
@@ -387,7 +371,7 @@ export const useChatStore = defineStore('chat', {
       if (ev.event === 'node') {
         this.handleNode(session, turn, ev.data)
       } else if (ev.event === 'recommendation_preview') {
-        this.handleRecommendationPreview(session, turn, ev.data)
+        this.handleRecommendationPreview(turn, ev.data)
       } else if (ev.event === 'interrupt') {
         this.handleInterrupt(turn, ev.data)
       } else if (ev.event === 'done') {
@@ -446,25 +430,15 @@ export const useChatStore = defineStore('chat', {
         case 'recommend': {
           turn.recommendation = (data.recommendation as Recommendation) ?? null
           turn.recommendationIntro = String(data.recommendation_intro ?? '')
-          const top = turn.recommendation?.items[0]
-          if (!turn.impressed && top) {
-            turn.impressed = true
-            void recordEvent(session.id, 'impression', top?.sku_id)
-          }
           break
         }
         default:
           break
       }
     },
-    handleRecommendationPreview(session: Session, turn: Turn, data: Record<string, unknown>): void {
+    handleRecommendationPreview(turn: Turn, data: Record<string, unknown>): void {
       turn.recommendation = (data.recommendation as Recommendation) ?? null
       turn.recommendationIntro = String(data.recommendation_intro ?? '')
-      const top = turn.recommendation?.items[0]
-      if (!turn.impressed && top) {
-        turn.impressed = true
-        void recordEvent(session.id, 'impression', top.sku_id)
-      }
     },
     handleInterrupt(turn: Turn, data: Record<string, unknown>): void {
       if ((data as { type?: string }).type === 'confirm_order') {
