@@ -115,7 +115,12 @@ def resolve_time_range(text: str, now: datetime | None = None, timezone: str = "
 def _clean_query_text(text: str) -> str:
     cleaned = _DATE_RE.sub("", text or "")
     cleaned = re.sub(r"最近\s*\d+\s*天|昨天|前天|今天|上周|上个月|上月|今年", "", cleaned)
-    cleaned = re.sub(r"花了多少钱|多少钱|平均每单多少钱|买了几单|多少单|按(?:品类|平台)统计|统计|买过哪些商品|买了哪些商品|买了什么|买过什么|是什么", "", cleaned)
+    cleaned = re.sub(
+        r"花了多少钱|多少钱|平均每单多少钱|买了几单|多少单|按(?:品类|平台)统计|统计|"
+        r"买过哪些商品|买了哪些商品|哪些东西|哪些商品|买了什么|买过什么|是什么",
+        "",
+        cleaned,
+    )
     return re.sub(r"\s+", "", cleaned)
 
 
@@ -133,8 +138,10 @@ def normalize_order_query(text: str, parsed_time: TimeRange) -> OrderQuery:
     if match:
         candidate = match.group(1)
         candidate = re.sub(r"在(?:京东|淘宝精选?|拼多多)", "", candidate)
+        candidate = re.sub(r"^(?:了|过)+", "", candidate)
+        candidate = re.sub(r"^(?:一个|一件|一款|一台|一部|个)", "", candidate)
         candidate = candidate.strip("，,。！？!? ")
-        if candidate and candidate not in {category, "什么", "哪些商品", "哪些"}:
+        if candidate and candidate not in {category, "什么", "哪些商品", "哪些", "哪些东西", "个", "东西"}:
             keyword = candidate
     if keyword == category:
         keyword = None

@@ -58,6 +58,23 @@ def test_normalize_query_extracts_category_platform_and_summary_type():
     assert summary.query_type == "summary"
 
 
+def test_normalize_query_treats_general_requests_without_creating_keyword():
+    parsed_time = resolve_time_range("我今天买了哪些东西", NOW, "Asia/Shanghai")
+    result = normalize_order_query("我今天买了哪些东西", parsed_time)
+
+    assert result.keyword is None
+    assert result.category is None
+    assert result.query_type == "search"
+
+
+def test_normalize_query_strips_measure_words_but_keeps_category_filters():
+    parsed_time = resolve_time_range("今天买了个鼠标", NOW, "Asia/Shanghai")
+    result = normalize_order_query("今天买了个鼠标", parsed_time)
+
+    assert result.category == "鼠标"
+    assert result.keyword is None
+
+
 def test_summarize_orders_and_group_orders_are_decimal_safe():
     orders = [
         {"title": "降噪耳机", "platform": "jd", "final_price": 100.10, "category": "耳机"},
