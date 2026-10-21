@@ -8,7 +8,6 @@ from langgraph.graph import END, START, StateGraph
 from app.agents.nodes import (
     clarify,
     confirm,
-    memory,
     order_query,
     place_order,
     recommend,
@@ -18,16 +17,10 @@ from app.agents.nodes import (
 from app.agents.state import AgentState
 
 
-def _after_capture(state: AgentState) -> str:
-    return "retrieve" if state.get("needs_action") == "shopping" else "end"
-
-
 def _after_route(state: AgentState) -> str:
     intent = state.get("intent")
     if intent == "shopping":
         return "shopping"
-    if intent == "memory":
-        return "memory"
     if intent == "order_search":
         return "order_search"
     if intent == "order_summary":
@@ -50,8 +43,6 @@ def _after_confirm(state: AgentState) -> str:
 def build_graph(checkpointer=None):
     g = StateGraph[AgentState, None, AgentState, AgentState](AgentState)
     g.add_node("clarify", clarify.clarify_node)
-    g.add_node("load_memory", memory.load_memory_node)
-    g.add_node("capture_memory", memory.capture_memory_node)
     g.add_node("parse_order_query", order_query.parse_order_query_node)
     g.add_node("query_orders", order_query.query_orders_node)
     g.add_node("summarize_orders", order_query.summarize_orders_node)
@@ -61,11 +52,10 @@ def build_graph(checkpointer=None):
     g.add_node("confirm", confirm.confirm_node)
     g.add_node("place_order", place_order.place_order_node)
 
-    g.add_edge(START, "load_memory")
-    g.add_edge("load_memory", "route")
+    g.add_edge(START, "route")
     g.add_conditional_edges(
         "route", _after_route,
-        {"shopping": "clarify", "order_search": "parse_order_query", "order_summary": "parse_order_query", "memory": "capture_memory", "cancel": END, "end": END},
+        {"shopping": "clarify", "order_search": "parse_order_query", "order_summary": "parse_order_query", "cancel": END, "end": END},
     )
     g.add_conditional_edges(
         "parse_order_query",
@@ -78,8 +68,11 @@ def build_graph(checkpointer=None):
         {"summary": "summarize_orders", "end": END},
     )
     g.add_edge("summarize_orders", END)
-    g.add_edge("clarify", "capture_memory")
-    g.add_conditional_edges("capture_memory", _after_capture, {"retrieve": "retrieve", "end": END})
+    g.add_conditional_edges(
+        "clarify",
+        lambda state: "retrieve" if state.get("needs_action") == "shopping" else "end",
+        {"retrieve": "retrieve", "end": END},
+    )
     g.add_edge("retrieve", "recommend")
     g.add_conditional_edges(
         "recommend", _after_recommend,

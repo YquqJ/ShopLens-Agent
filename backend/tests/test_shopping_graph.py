@@ -10,6 +10,8 @@ def test_shopping_graph_uses_real_product_facts_without_enrichment_node():
 
     assert {"retrieve", "recommend", "confirm", "place_order"} <= nodes
     assert "enrich_knowledge" not in nodes
+    assert "load_memory" not in nodes
+    assert "capture_memory" not in nodes
 
 
 @pytest.mark.anyio

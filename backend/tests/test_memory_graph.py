@@ -198,31 +198,30 @@ async def test_memory_nodes_use_config_profile_id_and_emit_json_safe_events(monk
     assert json.loads(json.dumps(captured)) == captured
 
 
-def test_graph_runs_load_before_clarify_and_capture() -> None:
+def test_graph_does_not_read_or_capture_long_term_memory() -> None:
     edges = {(edge.source, edge.target) for edge in build_graph().get_graph().edges}
 
-    assert ("__start__", "load_memory") in edges
-    assert ("load_memory", "route") in edges
+    assert ("__start__", "route") in edges
     assert ("route", "clarify") in edges
-    assert ("route", "capture_memory") in edges
-    assert ("clarify", "capture_memory") in edges
-    assert ("capture_memory", "retrieve") in edges
+    assert ("clarify", "retrieve") in edges
+    assert all("memory" not in source and "memory" not in target for source, target in edges)
 
 
 @pytest.mark.anyio
-async def test_route_fast_paths_explicit_memory_command_without_llm(monkeypatch) -> None:
-    async def fail_if_called(*args, **kwargs):
-        raise AssertionError("explicit memory command should not call the router LLM")
+async def test_route_does_not_handle_long_term_memory_commands(monkeypatch) -> None:
+    class _Structured:
+        async def ainvoke(self, _messages):
+            return route.RouteResult(intent="other")
 
-    monkeypatch.setattr(route, "get_structured_llm", fail_if_called)
+    monkeypatch.setattr(route, "get_structured_llm", lambda *_args: _Structured())
 
     result = await route.route_node({
         "messages": [HumanMessage("请记住我喜欢黑色")],
         "preferences": {},
     })
 
-    assert result["intent"] == "memory"
-    assert result["reply"] == "已更新跨会话偏好。"
+    assert result["intent"] == "other"
+    assert result["reply"] == "我是导购助手，可帮你比价选品、下单。说说你的购物需求吧～"
 
 
 @pytest.mark.anyio
