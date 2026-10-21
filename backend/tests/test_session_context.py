@@ -44,3 +44,23 @@ async def test_chat_payload_starts_fresh_context_after_a_completed_order() -> No
     assert builder is not None
     payload = await builder(_CompletedOrderGraph(), {}, "平台我选择京东")
     assert state.merge_preferences({"category": "卫衣", "budget": 3000}, payload["preferences"]) == {}
+
+
+class _ClarifyingGraph:
+    async def aget_state(self, _cfg):
+        return SimpleNamespace(values={
+            "preferences": {"category": "T恤"},
+            "clarify_question": "请问您的预算是多少？",
+            "hop_count": 2,
+            "optional_clarify_asked": False,
+        })
+
+
+@pytest.mark.anyio
+async def test_chat_payload_keeps_clarification_rounds_and_last_question() -> None:
+    builder = getattr(chat, "build_chat_payload", None)
+
+    payload = await builder(_ClarifyingGraph(), {}, "预算100")
+
+    assert payload["hop_count"] == 2
+    assert payload["clarify_question"] == "请问您的预算是多少？"

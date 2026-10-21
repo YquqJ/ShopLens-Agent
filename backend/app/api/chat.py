@@ -77,15 +77,23 @@ def _make_cfg(
 
 
 async def build_chat_payload(graph, cfg: dict, message: str) -> dict:
-    """下单成功后的下一条用户消息必须开始新的临时导购上下文。"""
+    """下单成功后的下一条用户消息必须开始新的临时导购上下文。
+
+    未完成下单时保留澄清进度（追问轮次、上一句追问），否则每轮都从 0 开始，
+    缺字段时会被同一句追问无限循环。
+    """
     snapshot = await graph.aget_state(cfg)
     previous_state = getattr(snapshot, "values", {}) or {}
     reset = should_reset_session(previous_state)
-    return initial_state(
+    payload = initial_state(
         message,
         reset_preferences=reset,
         optional_clarify_asked=False if reset else bool(previous_state.get("optional_clarify_asked")),
     )
+    if not reset:
+        payload["hop_count"] = int(previous_state.get("hop_count") or 0)
+        payload["clarify_question"] = str(previous_state.get("clarify_question") or "")
+    return payload
 
 
 def _safe_node_update(node: str, update: dict) -> dict:
