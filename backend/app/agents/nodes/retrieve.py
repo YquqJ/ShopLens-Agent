@@ -10,7 +10,8 @@ from langchain_core.runnables import RunnableConfig
 from app.agents.state import AgentState
 from app.services.product_evidence import build_zdm_evidence
 
-_TOP_K = 5
+# 单次检索向数据源请求的候选条数
+_TOP_K = 3
 _MALL_IDS = {
     "jd": 183, "京东": 183,
     "taobao": 243, "淘宝": 243, "淘宝精选": 243,

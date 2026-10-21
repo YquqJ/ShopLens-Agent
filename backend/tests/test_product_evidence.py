@@ -32,3 +32,10 @@ def test_build_zdm_evidence_keeps_only_finite_numeric_prices():
 def test_real_search_payload_maps_known_malls_and_ignores_unknown_platform():
     assert retrieve.build_real_search_payload({"platform": "pdd"})["mall_id"] == 8645
     assert "mall_id" not in retrieve.build_real_search_payload({"platform": "unknown"})
+
+
+def test_real_search_payload_requests_three_candidates():
+    payload = retrieve.build_real_search_payload({"category": "冲锋衣"})
+
+    assert payload["size"] == 3
+    assert payload["category_name"] == "冲锋衣"
