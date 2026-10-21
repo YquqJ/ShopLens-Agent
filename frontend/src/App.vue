@@ -10,6 +10,7 @@ import OrdersView from './components/OrdersView.vue'
 type ViewName = 'chat' | 'orders'
 const view = ref<ViewName>('chat')
 const drawerOpen = ref(true)
+const railOpen = ref(false)
 const store = useChatStore()
 // 启动即从后端恢复会话列表与最近对话（刷新后不留空）
 onMounted(() => { void store.hydrate() })
@@ -26,7 +27,7 @@ onMounted(() => { void store.hydrate() })
       </div>
       <nav class="nav" aria-label="主导航">
         <button class="nav-item" :class="{ active: view === 'chat' }" @click="view = 'chat'">导购</button>
-        <button class="nav-item" :class="{ active: view === 'orders' }" @click="view = 'orders'">订单</button>
+        <button class="nav-item" :class="{ active: view === 'orders' }" @click="view = 'orders'; railOpen = false">订单</button>
       </nav>
       <div class="spacer"></div>
       <button v-if="view === 'chat'" class="trace-btn" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
@@ -34,8 +35,8 @@ onMounted(() => { void store.hydrate() })
       </button>
     </header>
 
-    <div class="body" :class="{ 'drawer-closed': !drawerOpen, 'orders-active': view === 'orders' }">
-      <SessionRail v-if="view === 'chat'" />
+    <div class="body" :class="{ 'drawer-closed': !drawerOpen, 'rail-open': railOpen, 'orders-active': view === 'orders' }">
+      <SessionRail v-if="view === 'chat'" :open="railOpen" @toggle="railOpen = !railOpen" />
 
       <div class="main-col">
         <div class="content">

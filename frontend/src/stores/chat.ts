@@ -65,12 +65,12 @@ export interface Session {
 
 // 节点名 → Trace 抽屉展示文案（对齐原型右侧 Agent Trace）
 const NODE_META: Record<string, { label: string; desc: string }> = {
-  clarify: { label: '澄清', desc: '提取结构化偏好 / 判断是否缺关键信息' },
-  route: { label: '意图路由', desc: '判断购物 / 记忆 / 取消 / 其他' },
+  clarify: { label: '澄清', desc: '提取搜索条件' },
+  route: { label: '意图路由', desc: '判断购物 / 订单 / 其他' },
   parse_order_query: { label: '解析订单查询', desc: '解析时间范围与筛选条件' },
   query_orders: { label: '检索订单', desc: '查询已落库的订单快照' },
   summarize_orders: { label: '消费统计', desc: '计算订单数、总金额与平均客单价' },
-  retrieve: { label: '商品检索', desc: '召回候选商品' },
+  retrieve: { label: '商品检索', desc: '搜索候选商品' },
   recommend: { label: '可解释推荐', desc: '生成可溯源推荐理由' },
   confirm: { label: '下单确认', desc: 'HITL：人工确认下单' },
   place_order: { label: '下单落库', desc: '订单写入 PostgreSQL' },
