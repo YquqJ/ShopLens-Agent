@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useChatStore } from './stores/chat'
 import SessionRail from './components/SessionRail.vue'
 import ChatView from './components/ChatView.vue'
@@ -14,6 +14,14 @@ const railOpen = ref(false)
 const store = useChatStore()
 // 启动即从后端恢复会话列表与最近对话（刷新后不留空）
 onMounted(() => { void store.hydrate() })
+function closeRailAfterSelection() {
+  if (window.matchMedia('(max-width: 860px)').matches) railOpen.value = false
+}
+function closeRailOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') railOpen.value = false
+}
+onMounted(() => window.addEventListener('keydown', closeRailOnEscape))
+onUnmounted(() => window.removeEventListener('keydown', closeRailOnEscape))
 </script>
 
 <template>
@@ -30,13 +38,31 @@ onMounted(() => { void store.hydrate() })
         <button class="nav-item" :class="{ active: view === 'orders' }" @click="view = 'orders'; railOpen = false">订单</button>
       </nav>
       <div class="spacer"></div>
+      <button
+        v-if="view === 'chat'"
+        class="rail-toggle"
+        type="button"
+        :aria-label="railOpen ? '收起会话栏' : '展开会话栏'"
+        :title="railOpen ? '收起会话栏' : '展开会话栏'"
+        :aria-expanded="railOpen"
+        aria-controls="session-rail"
+        @click="railOpen = !railOpen"
+      >
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M9 4v16" />
+          <path v-if="railOpen" d="m15 9-3 3 3 3" />
+          <path v-else d="m12 9 3 3-3 3" />
+        </svg>
+      </button>
       <button v-if="view === 'chat'" class="trace-btn" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
         <span class="pulse"></span> Agent Trace
       </button>
     </header>
 
     <div class="body" :class="{ 'drawer-closed': !drawerOpen, 'rail-open': railOpen, 'orders-active': view === 'orders' }">
-      <SessionRail v-if="view === 'chat'" :open="railOpen" @toggle="railOpen = !railOpen" />
+      <button v-if="view === 'chat' && railOpen" class="rail-backdrop" aria-label="关闭会话栏" tabindex="-1" @click="railOpen = false"></button>
+      <SessionRail v-if="view === 'chat'" :open="railOpen" @select="closeRailAfterSelection" />
 
       <div class="main-col">
         <div class="content">
