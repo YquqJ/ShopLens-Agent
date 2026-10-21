@@ -157,12 +157,18 @@ textarea { font-family: inherit; }
 .pill-opt { background: var(--gold); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 .diagonal { font-size: 12px; color: var(--muted-fg); }
 
-.hitl { padding: 20px; border-left: 3px solid var(--gold); margin-bottom: 4px; }
+.hitl { container-type: inline-size; padding: 20px; border-left: 3px solid var(--gold); margin-bottom: 4px; }
 .hitl h3 { font-family: var(--font-display); font-size: 19px; font-weight: 600; display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
 .hitl p { color: var(--muted-fg); font-size: 13px; margin-bottom: 13px; }
-.order-summary { background: var(--muted-bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 17px; margin-bottom: 14px; }
-.order-line { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13.5px; }
-.order-line.total { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 10px; font-weight: 700; font-size: 15.5px; }
+.hitl-summary { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px; align-items: stretch; background: var(--muted-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+.hitl-summary > div { min-width: 0; padding: 13px 16px; }
+.hitl-summary-product { display: grid; gap: 4px; }
+.hitl-summary-meta, .hitl-summary-total { display: grid; align-content: center; gap: 4px; border-left: 1px solid var(--border); }
+.hitl-summary-label { color: var(--muted-fg); font-size: 11px; }
+.hitl-summary strong { min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.hitl-summary-product strong { line-height: 1.45; }
+.hitl-summary-subtotal { color: var(--muted-fg); font-size: 12px; }
+.hitl-summary-total strong { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
 .price-change { margin-left: 6px; font-size: 12px; font-weight: 600; }
 .price-change.up { color: #b45309; }
 .price-change.down { color: #047857; }
@@ -326,11 +332,11 @@ textarea { font-family: inherit; }
 .orders-table .empty { text-align: center; color: var(--muted-fg); padding: 18px; }
  .order-query-bubble { width: 100%; max-width: none !important; }
  .order-query-results { display: grid; gap: 12px; width: 100%; }
- .order-summary { display: flex; flex-wrap: wrap; gap: 10px 18px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,.08); }
- .order-summary > div { display: grid; gap: 2px; min-width: 92px; }
- .order-summary span { color: var(--muted, #78716c); font-size: 12px; }
- .order-summary strong { font-size: 16px; }
- .order-summary .order-summary-group { min-width: 130px; }
+ .order-query-results .order-summary { display: flex; flex-wrap: wrap; gap: 10px 18px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,.08); }
+ .order-query-results .order-summary > div { display: grid; gap: 2px; min-width: 92px; }
+ .order-query-results .order-summary span { color: var(--muted, #78716c); font-size: 12px; }
+ .order-query-results .order-summary strong { font-size: 16px; }
+ .order-query-results .order-summary .order-summary-group { min-width: 130px; }
  .order-query-list { display: grid; gap: 8px; max-height: 390px; overflow-y: auto; padding-right: 6px; }
  .order-query-item { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; }
  .order-query-thumb { width: 48px; height: 48px; border-radius: 6px; overflow: hidden; background: #f5f5f4; display: grid; place-items: center; font-size: 11px; color: #78716c; }
@@ -340,3 +346,10 @@ textarea { font-family: inherit; }
  .order-query-info span { color: var(--muted, #78716c); font-size: 12px; }
  .order-query-price { white-space: nowrap; }
  .order-query-empty { color: var(--muted, #78716c); padding: 8px 0; }
+
+@container (max-width: 560px) {
+  .hitl-summary { grid-template-columns: 1fr 1fr; }
+  .hitl-summary-product { grid-column: 1 / -1; }
+  .hitl-summary-meta, .hitl-summary-total { border-top: 1px solid var(--border); border-left: none; }
+  .hitl-summary-total { border-left: 1px solid var(--border); }
+}

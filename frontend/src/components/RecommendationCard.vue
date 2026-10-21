@@ -207,17 +207,21 @@ async function cancel(): Promise<void> {
       </h3>
       <div v-if="!turn.priceRaised && !selectedSkuId" class="select-hint">👆 请先点选一款候选商品，再确认下单</div>
 
-      <div v-if="summary" class="order-summary">
-        <div class="order-line"><span>{{ summary.title }} ×1</span><span>{{ fmt(summary.final_price) }}</span></div>
-        <div class="order-line"><span>平台</span><span>{{ platName(summary.platform) }}</span></div>
-        <!-- <div class="order-line"><span>快递时效</span><span>{{ summary.eta_days }} 天</span></div> -->
-        <div class="order-line total">
-          <span>应付合计</span>
-          <span>
-            {{ fmt(summary.final_price) }}
-            <span v-if="priceChange" class="price-change" :class="priceChange.direction">
-              {{ priceChange.direction === 'up' ? '↑' : '↓' }} {{ fmt(priceChange.amount) }}
-            </span>
+      <div v-if="summary" class="hitl-summary">
+        <div class="hitl-summary-product">
+          <span class="hitl-summary-label">商品</span>
+          <strong>{{ summary.title }} ×1</strong>
+          <span class="hitl-summary-subtotal">小计 {{ fmt(summary.final_price) }}</span>
+        </div>
+        <div class="hitl-summary-meta">
+          <span class="hitl-summary-label">平台</span>
+          <strong>{{ platName(summary.platform) }}</strong>
+        </div>
+        <div class="hitl-summary-total">
+          <span class="hitl-summary-label">应付合计</span>
+          <strong>{{ fmt(summary.final_price) }}</strong>
+          <span v-if="priceChange" class="price-change" :class="priceChange.direction">
+            {{ priceChange.direction === 'up' ? '↑' : '↓' }} {{ fmt(priceChange.amount) }}
           </span>
         </div>
       </div>
