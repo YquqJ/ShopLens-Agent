@@ -160,14 +160,15 @@ textarea { font-family: inherit; }
 .hitl { container-type: inline-size; padding: 20px; border-left: 3px solid var(--gold); margin-bottom: 4px; }
 .hitl h3 { font-family: var(--font-display); font-size: 19px; font-weight: 600; display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
 .hitl p { color: var(--muted-fg); font-size: 13px; margin-bottom: 13px; }
-.hitl-summary { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px; align-items: stretch; background: var(--muted-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+.hitl-summary { background: var(--muted-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
 .hitl-summary > div { min-width: 0; padding: 13px 16px; }
 .hitl-summary-product { display: grid; gap: 4px; }
-.hitl-summary-meta, .hitl-summary-total { display: grid; align-content: center; gap: 4px; border-left: 1px solid var(--border); }
+.hitl-summary-secondary { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--border); }
+.hitl-summary-meta, .hitl-summary-total { display: grid; align-content: center; gap: 4px; }
+.hitl-summary-total { border-left: 1px solid var(--border); }
 .hitl-summary-label { color: var(--muted-fg); font-size: 11px; }
 .hitl-summary strong { min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .hitl-summary-product strong { line-height: 1.45; }
-.hitl-summary-subtotal { color: var(--muted-fg); font-size: 12px; }
 .hitl-summary-total strong { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
 .price-change { margin-left: 6px; font-size: 12px; font-weight: 600; }
 .price-change.up { color: #b45309; }
@@ -346,10 +347,3 @@ textarea { font-family: inherit; }
  .order-query-info span { color: var(--muted, #78716c); font-size: 12px; }
  .order-query-price { white-space: nowrap; }
  .order-query-empty { color: var(--muted, #78716c); padding: 8px 0; }
-
-@container (max-width: 560px) {
-  .hitl-summary { grid-template-columns: 1fr 1fr; }
-  .hitl-summary-product { grid-column: 1 / -1; }
-  .hitl-summary-meta, .hitl-summary-total { border-top: 1px solid var(--border); border-left: none; }
-  .hitl-summary-total { border-left: 1px solid var(--border); }
-}

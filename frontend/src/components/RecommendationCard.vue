@@ -211,18 +211,19 @@ async function cancel(): Promise<void> {
         <div class="hitl-summary-product">
           <span class="hitl-summary-label">商品</span>
           <strong>{{ summary.title }} ×1</strong>
-          <span class="hitl-summary-subtotal">小计 {{ fmt(summary.final_price) }}</span>
         </div>
-        <div class="hitl-summary-meta">
-          <span class="hitl-summary-label">平台</span>
-          <strong>{{ platName(summary.platform) }}</strong>
-        </div>
-        <div class="hitl-summary-total">
-          <span class="hitl-summary-label">应付合计</span>
-          <strong>{{ fmt(summary.final_price) }}</strong>
-          <span v-if="priceChange" class="price-change" :class="priceChange.direction">
-            {{ priceChange.direction === 'up' ? '↑' : '↓' }} {{ fmt(priceChange.amount) }}
-          </span>
+        <div class="hitl-summary-secondary">
+          <div class="hitl-summary-meta">
+            <span class="hitl-summary-label">平台</span>
+            <strong>{{ platName(summary.platform) }}</strong>
+          </div>
+          <div class="hitl-summary-total">
+            <span class="hitl-summary-label">应付合计</span>
+            <strong>{{ fmt(summary.final_price) }}</strong>
+            <span v-if="priceChange" class="price-change" :class="priceChange.direction">
+              {{ priceChange.direction === 'up' ? '↑' : '↓' }} {{ fmt(priceChange.amount) }}
+            </span>
+          </div>
         </div>
       </div>
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
