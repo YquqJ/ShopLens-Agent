@@ -47,6 +47,21 @@ _RANGE_RE = re.compile(
     r"(?P<start>20\d{2}[年/-]\d{1,2}[月/-]\d{1,2}日?)\s*(?:至|到|~|～|-)\s*"
     r"(?P<end>20\d{2}[年/-]\d{1,2}[月/-]\d{1,2}日?)"
 )
+# 口语化天数区间：「这两天」「这几天」「近三天」「最近两天」
+_SPAN_RE = re.compile(r"(?P<prefix>最近|这|近)\s*(?P<num>[两二三四五六七八九十]|几|\d+)?\s*[天日]")
+# 不含具体天数的模糊区间，统一按默认天数理解
+_VAGUE_SPANS = ("这阵子", "这段时间", "近段时间")
+_CN_NUMBERS = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+# 无法确定天数时，「这几天」按 3 天理解
+_DEFAULT_SPAN_DAYS = 3
+
+
+def _span_days(raw: str | None) -> int:
+    if not raw:
+        return _DEFAULT_SPAN_DAYS
+    if raw.isdigit():
+        return int(raw)
+    return _CN_NUMBERS.get(raw, _DEFAULT_SPAN_DAYS)
 
 
 def _local_midnight(value: date, tz: ZoneInfo) -> datetime:
@@ -85,9 +100,15 @@ def resolve_time_range(text: str, now: datetime | None = None, timezone: str = "
     if "昨天" in text:
         day = today - timedelta(days=1)
         return TimeRange(_local_midnight(day, tz), _local_midnight(today, tz), "昨天")
+    if "大前天" in text:
+        day = today - timedelta(days=3)
+        return TimeRange(_local_midnight(day, tz), _local_midnight(day + timedelta(days=1), tz), "大前天")
     if "前天" in text:
         day = today - timedelta(days=2)
         return TimeRange(_local_midnight(day, tz), _local_midnight(day + timedelta(days=1), tz), "前天")
+    if "本周" in text or "这周" in text or "这星期" in text:
+        this_monday = today - timedelta(days=today.weekday())
+        return TimeRange(_local_midnight(this_monday, tz), _local_midnight(today + timedelta(days=1), tz), "本周")
     if "上周" in text:
         this_monday = today - timedelta(days=today.weekday())
         start = this_monday - timedelta(days=7)
@@ -109,19 +130,56 @@ def resolve_time_range(text: str, now: datetime | None = None, timezone: str = "
             raise ValueError("最近天数必须大于 0")
         return TimeRange(current - timedelta(days=days), current, f"最近{days}天")
 
+    # 口语化区间：「这两天」「这几天」「近三天」「最近两天」
+    span = _SPAN_RE.search(text)
+    if span:
+        days = _span_days(span["num"])
+        if days <= 0:
+            raise ValueError("最近天数必须大于 0")
+        if span["prefix"] == "最近":
+            return TimeRange(current - timedelta(days=days), current, f"最近{days}天")
+        # 「这两天」「这几天」「近五天」按含今天在内的自然日计算
+        start = today - timedelta(days=days - 1)
+        return TimeRange(
+            _local_midnight(start, tz),
+            _local_midnight(today + timedelta(days=1), tz),
+            f"这{days}天",
+        )
+
+    # 「这阵子」「这段时间」等模糊区间按默认天数处理
+    if any(marker in text for marker in _VAGUE_SPANS):
+        start = today - timedelta(days=_DEFAULT_SPAN_DAYS - 1)
+        return TimeRange(
+            _local_midnight(start, tz),
+            _local_midnight(today + timedelta(days=1), tz),
+            f"这{_DEFAULT_SPAN_DAYS}天",
+        )
+
     raise ValueError("时间范围不明确")
 
 
 def _clean_query_text(text: str) -> str:
     cleaned = _DATE_RE.sub("", text or "")
-    cleaned = re.sub(r"最近\s*\d+\s*天|昨天|前天|今天|上周|上个月|上月|今年", "", cleaned)
+    cleaned = re.sub(r"最近\s*\d+\s*天", "", cleaned)
+    cleaned = _SPAN_RE.sub("", cleaned)
+    cleaned = re.sub(r"这阵子|这段时间|近段时间", "", cleaned)
+    cleaned = re.sub(r"大前天|昨天|前天|今天|本周|这周|这星期|上周|上个月|上月|今年", "", cleaned)
     cleaned = re.sub(
         r"花了多少钱|多少钱|平均每单多少钱|买了几单|多少单|按(?:品类|平台)统计|统计|"
-        r"买过哪些商品|买了哪些商品|哪些东西|哪些商品|买了什么|买过什么|是什么",
+        r"买过哪些商品|买了哪些商品|买了些什么东西|买过些什么|买些什么|"
+        r"哪些东西|哪些商品|些什么东西|些什么|买了什么|买过什么|是什么",
         "",
         cleaned,
     )
     return re.sub(r"\s+", "", cleaned)
+
+
+_GENERIC_KEYWORD_RE = re.compile(r"^(?:些|什么|哪些|啥|东西|商品|些东西|些什么东西)+$")
+
+
+def _is_generic_keyword(candidate: str) -> bool:
+    """过滤「些什么东西」这类泛化问句残留，避免被当成商品关键词。"""
+    return bool(_GENERIC_KEYWORD_RE.match(candidate))
 
 
 def normalize_order_query(text: str, parsed_time: TimeRange) -> OrderQuery:
@@ -141,7 +199,11 @@ def normalize_order_query(text: str, parsed_time: TimeRange) -> OrderQuery:
         candidate = re.sub(r"^(?:了|过)+", "", candidate)
         candidate = re.sub(r"^(?:一个|一件|一款|一台|一部|个)", "", candidate)
         candidate = candidate.strip("，,。！？!? ")
-        if candidate and candidate not in {category, "什么", "哪些商品", "哪些", "哪些东西", "个", "东西"}:
+        if (
+            candidate
+            and candidate not in {category, "什么", "哪些商品", "哪些", "哪些东西", "个", "东西"}
+            and not _is_generic_keyword(candidate)
+        ):
             keyword = candidate
     if keyword == category:
         keyword = None

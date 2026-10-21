@@ -35,6 +35,62 @@ def test_resolve_previous_week_and_recent_days():
     assert recent.end_at == NOW
 
 
+@pytest.mark.parametrize(
+    ("text", "start", "label"),
+    [
+        ("这两天买了什么", "2026-10-20T00:00:00+08:00", "这2天"),
+        ("这几天买了什么", "2026-10-19T00:00:00+08:00", "这3天"),
+        ("这三天买了什么", "2026-10-19T00:00:00+08:00", "这3天"),
+        ("近五天买了什么", "2026-10-17T00:00:00+08:00", "这5天"),
+        ("这两天都买了些什么东西", "2026-10-20T00:00:00+08:00", "这2天"),
+    ],
+)
+def test_resolve_colloquial_day_spans(text, start, label):
+    result = resolve_time_range(text, NOW, "Asia/Shanghai")
+
+    assert result.start_at.isoformat() == start
+    # 区间右边界始终是明天零点，包含今天
+    assert result.end_at.isoformat() == "2026-10-22T00:00:00+08:00"
+    assert result.label == label
+
+
+def test_resolve_current_week_and_day_before_yesterday():
+    this_week = resolve_time_range("本周买了什么", NOW, "Asia/Shanghai")
+    day_before = resolve_time_range("大前天买了什么", NOW, "Asia/Shanghai")
+
+    assert this_week.start_at.isoformat() == "2026-10-19T00:00:00+08:00"
+    assert this_week.end_at.isoformat() == "2026-10-22T00:00:00+08:00"
+    assert day_before.start_at.isoformat() == "2026-10-18T00:00:00+08:00"
+    assert day_before.end_at.isoformat() == "2026-10-19T00:00:00+08:00"
+
+
+def test_normalize_colloquial_span_does_not_create_keyword():
+    parsed_time = resolve_time_range("这两天买了什么", NOW, "Asia/Shanghai")
+    result = normalize_order_query("这两天买了什么", parsed_time)
+
+    assert result.keyword is None
+    assert result.category is None
+    assert result.query_type == "search"
+    assert result.label == "这2天"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "这两天我都买了些什么东西",
+        "这两天买些什么",
+        "这两天买了些什么",
+        "这几天我都买过些什么东西",
+    ],
+)
+def test_normalize_colloquial_span_ignores_generic_question_words(text):
+    parsed_time = resolve_time_range(text, NOW, "Asia/Shanghai")
+    result = normalize_order_query(text, parsed_time)
+
+    assert result.keyword is None
+    assert result.category is None
+
+
 def test_resolve_concrete_date_range_and_naive_now_in_app_timezone():
     result = resolve_time_range("2026-10-01 至 2026-10-03 的订单", datetime(2026, 10, 21, 15, 30), "Asia/Shanghai")
 
@@ -102,6 +158,9 @@ def test_route_distinguishes_order_search_from_shopping():
     assert _fast_path({"messages": [HumanMessage("昨天我买了什么")], "preferences": {}}) == "order_search"
     assert _fast_path({"messages": [HumanMessage("最近 30 天买耳机花了多少钱")], "preferences": {}}) == "order_summary"
     assert _fast_path({"messages": [HumanMessage("我想买耳机")], "preferences": {}}) is None
+    assert _fast_path({"messages": [HumanMessage("这两天买了什么")], "preferences": {}}) == "order_search"
+    assert _fast_path({"messages": [HumanMessage("这两天买耳机花了多少钱")], "preferences": {}}) == "order_summary"
+    assert _fast_path({"messages": [HumanMessage("这两天想买耳机")], "preferences": {}}) is None
 
 
 @pytest.mark.anyio

@@ -29,6 +29,11 @@ _CANCEL_REPLY = "好的，本轮导购已结束。之后有新的购物需求时
 
 _SHOPPING_MARKERS = ("买", "推荐", "比价", "价格", "预算", "商品", "衬衫", "外套", "卫衣", "裤装", "鞋", "T恤")
 _ORDER_MARKERS = ("昨天", "前天", "上周", "上个月", "最近", "今年", "买了什么", "买了哪些", "买过哪些", "花了多少钱", "买了几单", "平均每单", "订单", "消费")
+# 相对时间词：命中后与「买」组合即可短路为订单查询
+_TEMPORAL_MARKERS = (
+    "今天", "昨天", "前天", "大前天", "本周", "这周", "这星期", "上周",
+    "上个月", "上月", "今年", "最近", "这两天", "这几天", "这阵子", "近几天",
+)
 
 _CANCEL_PATTERNS = (
     re.compile(r"^(?:我)?(?:不要了|不买了|先不买了|暂时不买了|不用了|不需要了|不考虑了)[，。！？!?,\s]*$"),
@@ -63,7 +68,7 @@ def _fast_path(state: AgentState) -> str | None:
     text = _latest_text(state).strip()
     if _is_cancel_command(text):
         return "cancel"
-    temporal = any(marker in text for marker in ("今天", "昨天", "前天", "上周", "上个月", "最近", "今年"))
+    temporal = any(marker in text for marker in _TEMPORAL_MARKERS)
     if (any(marker in text for marker in _ORDER_MARKERS) and any(
         marker in text for marker in ("买了什么", "买了哪些", "买过", "花了", "几单", "平均", "订单", "消费")
     )) or (temporal and "买" in text and "想买" not in text and "推荐" not in text):

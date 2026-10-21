@@ -21,7 +21,7 @@ async def parse_order_query_node(state: AgentState) -> dict:
     try:
         parsed_time = order_query_service.resolve_time_range(text)
     except ValueError:
-        question = "请补充明确的时间范围，例如“昨天”“上周”或“最近 30 天”。"
+        question = "请补充明确的时间范围，例如“今天”“昨天”“这两天”“上周”或“最近 30 天”。"
         return {
             "order_query": None,
             "order_clarification": question,
