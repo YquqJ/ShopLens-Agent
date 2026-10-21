@@ -58,10 +58,11 @@ class AgentState(TypedDict):
     order_summary: dict | None
     order_clarification: str | None
     order_error: str | None
-    preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
-    profile_preferences: dict  # 用户授权的跨会话长期偏好（不混入本轮 preferences）
-    memory_events: Annotated[list[dict], operator.add]  # trace-safe 记忆读取/写入事件
-    intent: str          # "shopping" | "memory" | "other"
+    preferences: Annotated[dict, merge_preferences]   # 当前会话跨轮累积（reducer 合并非空字段）
+    optional_clarify_asked: bool  # 类目专属补充问题最多询问一次
+    profile_preferences: dict  # 兼容历史 checkpoint，当前购物链路不读取
+    memory_events: Annotated[list[dict], operator.add]  # 兼容历史 checkpoint
+    intent: str          # "shopping" | "order_search" | "order_summary" | "other"
     needs_action: str          # "" | "clarify" | "shopping"
     clarify_question: str      # M8：澄清问句（独立序列化字段，供前端透出；messages 不含）
     trace_preferences: dict     # 当前澄清轮合并后的偏好，仅供 Trace 展示
@@ -82,7 +83,12 @@ class AgentState(TypedDict):
     session_reset_pending: bool  # 真实源选择完成后，下一轮清空临时偏好
 
 
-def initial_state(message: str, *, reset_preferences: bool = False) -> AgentState:
+def initial_state(
+    message: str,
+    *,
+    reset_preferences: bool = False,
+    optional_clarify_asked: bool = False,
+) -> AgentState:
     """构造初始状态（首轮用户消息 + 各字段默认值）。"""
     turn_id = str(uuid.uuid4())
     return {
@@ -97,7 +103,8 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "order_clarification": None,
         "order_error": None,
         "preferences": {_RESET_SESSION_PREFERENCES: True} if reset_preferences else {},
-        "profile_preferences": {},
+        "optional_clarify_asked": optional_clarify_asked,
+        "profile_preferences": {},  # 兼容历史 checkpoint，当前链路不读取
         "memory_events": [],
         "intent": "",
         "needs_action": "",

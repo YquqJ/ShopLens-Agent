@@ -3,13 +3,11 @@
 export interface Preferences {
   category: string | null
   budget: number | null
+  requirements: string | null
+  brand: string | null
+  use_case: string | null
   color: string | null
-  style: string | null
-  material: string | null
-  scene: string | null
-  fit?: string | null
   gender: string | null
-  requirements?: string | null
 }
 
 export interface Candidate {

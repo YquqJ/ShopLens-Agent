@@ -18,7 +18,6 @@ from pydantic import BaseModel
 
 from app.agents.llm import MAIN_MODEL, get_structured_llm
 from app.agents.state import AgentState
-from app.agents.nodes.memory import build_effective_preferences
 
 _TOP_N = 3
 
@@ -244,20 +243,10 @@ def _fmt_attrs(attrs: dict) -> str:
 
 def _fmt_prefs(prefs: dict) -> str:
     """偏好字典 → 紧凑「键=值」，跳过空字段（裁剪用）。"""
-    mapping = [("category", "品类"), ("budget", "预算"), ("color", "颜色"),
-               ("style", "风格"), ("material", "材质"), ("scene", "场景"),
-               ("fit", "版型"), ("gender", "性别"),
+    mapping = [("category", "品类"), ("budget", "预算"), ("brand", "品牌"),
+               ("use_case", "用途"), ("color", "颜色"), ("gender", "性别"),
                ("requirements", "要求")]
     parts = [f"{cn}={prefs[k]}" for k, cn in mapping if prefs.get(k) not in (None, "", [])]
-    defaults = [
-        ("preferred_colors", "长期颜色", "color"),
-        ("preferred_styles", "长期风格", "style"),
-        ("preferred_materials", "长期材质", "material"),
-        ("avoid_preferences", "长期避雷", None),
-    ]
-    for key, label, current_key in defaults:
-        if prefs.get(key) and (current_key is None or not prefs.get(current_key)):
-            parts.append(f"{label}={'、'.join(str(v) for v in prefs[key])}")
     return " ".join(parts) if parts else str(prefs)
 
 
@@ -293,7 +282,7 @@ def _recommendation_history_update(state: AgentState, recommendation: dict, intr
 def _format_recommendation_intro(prefs: dict, count: int) -> str:
     """生成推荐卡片前的结构化需求确认语句。"""
     parts = []
-    for key in ("category", "gender", "color", "style", "material", "scene", "fit"):
+    for key in ("category", "brand", "use_case", "gender", "color"):
         value = prefs.get(key)
         if value not in (None, "", []):
             parts.append(str(value))
@@ -321,7 +310,7 @@ async def recommend_node(state: AgentState) -> dict:
 
 
 async def _recommend_with_evidence(state: AgentState) -> dict:
-    prefs = build_effective_preferences(state.get("preferences") or {}, state.get("profile_preferences") or {})
+    prefs = dict(state.get("preferences") or {})
     candidates = list(state.get("candidates") or [])
     budget = prefs.get("budget")
     top = []

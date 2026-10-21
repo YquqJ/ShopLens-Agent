@@ -1,34 +1,27 @@
-"""澄清节点：LLM 从最新用户消息提取结构化偏好，关键信息缺失则反问。
+"""澄清节点：LLM 从最新用户消息提取精简的结构化购物需求。
 
 设计决策：
 - 关键信息 = 品类 + 预算，二者缺一即 needs_clarification，追问收敛需求；
 - 偏好用结构化输出（Pydantic）而非 JSON 字符串解析，避免格式抖动；
 - 多轮累积：preferences 带 merge reducer（state.py）跨轮保留；
-  clarify 把历史偏好喂回 prompt，并按「合并后」结果判断缺哪些字段，
-  不再只信 LLM 对最新消息的 needs_clarification（它会因读不到历史而误追问）。
+- 品类专属字段只做一次可选补充询问，不阻塞商品检索。
 """
-import json
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.agents.llm import MAIN_MODEL, get_structured_llm
-from app.agents.nodes.memory import build_effective_preferences
 from app.agents.state import AgentState, merge_preferences
 
 
 class Preferences(BaseModel):
     category: str | None = Field(None, description="商品品类，如 手机/耳机/外套/厨房用品")
     budget: float | None = Field(None, description="预算（元）")
-    platform: str | None = Field(None, description="用户本轮明确指定的商城，如 jd/taobao/pdd；未指定留空")
-    brand: str | None = Field(None, description="明确指定的商品品牌（无则留空）")
-    color: str | None = Field(None, description="本次颜色偏好，如 黑色/深蓝（无则留空）")
-    style: str | None = Field(None, description="风格偏好，如 简约/复古（无则留空）")
-    material: str | None = Field(None, description="材质，如 纯棉/亚麻/羊毛（无则留空）")
-    scene: str | None = Field(None, description="穿着场景，如 通勤/周末/旅行（无则留空）")
-    fit: str | None = Field(None, description="版型偏好，如 修身/宽松/直筒/落肩（无则留空）")
-    gender: str | None = Field(None, description="性别偏好，如 男款/女款（无则留空）")
     requirements: str | None = Field(None, description="无法归入闭集字段的功能/描述需求，如 显瘦一点、透气（无则留空）")
+    gender: str | None = Field(None, description="服饰性别偏好，如 男款/女款/中性（无则留空）")
+    color: str | None = Field(None, description="服饰颜色偏好，如 黑色/深蓝（无则留空）")
+    brand: str | None = Field(None, description="数码商品品牌偏好（无则留空）")
+    use_case: str | None = Field(None, description="数码商品主要用途，如 拍照/游戏/日常使用（无则留空）")
 
 
 class ClarifyResult(BaseModel):
@@ -38,36 +31,27 @@ class ClarifyResult(BaseModel):
 
 
 _SYSTEM = (
-    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/商城/品牌/颜色/风格/材质/场景/版型/性别），拿不准的字段留空。"
-    "品类可以是任意商品；服饰相关字段仅在用户购买服饰时填写。商城只在用户明确指定时填写，京东用 jd、淘宝用 taobao、拼多多用 pdd。"
-    "无法归入这些闭集字段的功能/描述语（如 显瘦一点、透气）填到 requirements。"
-    "如果用户本轮更换了商品品类，视为新的商品需求；旧品类的预算、品牌、颜色、风格、材质、场景、版型、性别及功能要求不可自动沿用，只有本轮再次明确提到时才填写。"
+    "你是导购澄清助手。从用户一句话里提取精简购物需求：通用字段为品类、预算、其他要求；服饰只提取性别和颜色；数码只提取品牌和主要用途。"
+    "拿不准的字段留空，不能把服饰字段填到数码需求，也不能把数码字段填到服饰需求。"
+    "如果用户本轮更换了商品品类，视为新的商品需求；旧品类的预算、品牌、颜色、性别、用途及其他要求不可自动沿用，只有本轮再次明确提到时才填写。"
     "关键信息=品类+预算，缺任一即 needs_clarification=True。"
 )
 
 _CATEGORY_SCOPED_FIELDS = (
-    "budget", "platform", "brand", "color", "style", "material", "scene", "fit", "gender", "requirements",
+    "budget", "brand", "color", "gender", "use_case", "requirements",
 )
 
-_PLATFORM_ALIASES = {
-    "jd": "jd", "京东": "jd", "jingdong": "jd",
-    "taobao": "taobao", "淘宝": "taobao", "淘宝精选": "taobao",
-    "pdd": "pdd", "拼多多": "pdd",
-}
+_PREFERENCE_FIELDS = frozenset(Preferences.model_fields)
+_CLOTHING_MARKERS = ("服饰", "衣", "裤", "裙", "鞋", "帽", "袜", "外套", "衬衫", "卫衣", "T恤")
+_DIGITAL_MARKERS = ("数码", "手机", "电脑", "笔记本", "平板", "耳机", "相机", "手表")
 
 
 def normalize_preferences(raw: dict) -> dict:
-    """Drop empty fields and canonicalize known explicitly requested malls."""
+    """只保留精简需求字段，并丢弃空值。"""
     normalized = {
         key: value for key, value in (raw or {}).items()
-        if value not in (None, "", [])
+        if key in _PREFERENCE_FIELDS and value not in (None, "", [])
     }
-    platform = normalized.get("platform")
-    if platform is not None:
-        platform_text = str(platform).strip()
-        normalized["platform"] = _PLATFORM_ALIASES.get(
-            platform_text.lower(), _PLATFORM_ALIASES.get(platform_text, platform_text),
-        )
     return normalized
 
 
@@ -89,22 +73,32 @@ def _default_question(prefs: dict) -> str:
     return "能否再补充一下你的偏好？"
 
 
+def _category_kind(category: str | None) -> str | None:
+    text = str(category or "")
+    if any(marker in text for marker in _CLOTHING_MARKERS):
+        return "clothing"
+    if any(marker in text for marker in _DIGITAL_MARKERS):
+        return "digital"
+    return None
+
+
+def _optional_question(prefs: dict) -> str:
+    """类目专属字段只作为一次补充询问，不影响进入检索。"""
+    kind = _category_kind(prefs.get("category"))
+    if kind == "clothing" and (not prefs.get("gender") or not prefs.get("color")):
+        return "更偏向男款、女款还是中性款？颜色有偏好吗？"
+    if kind == "digital" and (not prefs.get("brand") or not prefs.get("use_case")):
+        return "有偏好的品牌吗？主要用于拍照、游戏，还是日常使用？"
+    return ""
+
+
 async def clarify_node(state: AgentState) -> dict:
     structured = get_structured_llm(MAIN_MODEL, ClarifyResult)
     latest = state["messages"][-1].content if state["messages"] else ""
-    prev = build_effective_preferences(
-        state.get("preferences") or {}, state.get("profile_preferences") or {},
-    )
+    prev = dict(state.get("preferences") or {})
 
-    # 把历史偏好喂回 prompt：让 LLM 在已确认信息上补缺失字段，避免重复追问
-    system = _SYSTEM
-    if prev:
-        system += (
-            "\n历史已确认偏好：" + json.dumps(prev, ensure_ascii=False)
-            + "。若用户本轮明确改买不同品类，则旧品类相关条件一律不沿用、未明确的新条件留空；否则可在历史基础上补充或纠正，未提及字段保持原值。"
-        )
     result: ClarifyResult = await structured.ainvoke([
-        SystemMessage(system), HumanMessage(latest),
+        SystemMessage(_SYSTEM), HumanMessage(latest),
     ])
 
     # A changed product category starts a fresh set of product-specific constraints.
@@ -119,13 +113,15 @@ async def clarify_node(state: AgentState) -> dict:
         preference_update["__clear_preference_fields__"] = _CATEGORY_SCOPED_FIELDS
     merged = merge_preferences(prev, preference_update)
 
-    # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification
+    # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification。
     needs = bool(_missing(merged))
+    optional_asked = False if category_changed else bool(state.get("optional_clarify_asked"))
 
     update: dict = {
         "preferences": preference_update,   # 经 merge reducer 与历史合并
         "trace_preferences": merged,
         "hop_count": state.get("hop_count", 0) + 1,
+        "optional_clarify_asked": optional_asked,
     }
     if needs:
         update["needs_action"] = "clarify"
@@ -134,5 +130,9 @@ async def clarify_node(state: AgentState) -> dict:
         update["messages"] = [AIMessage(question)]
     else:
         update["needs_action"] = "shopping"
-        update["clarify_question"] = ""
+        question = "" if optional_asked else _optional_question(merged)
+        update["clarify_question"] = question
+        if question:
+            update["messages"] = [AIMessage(question)]
+            update["optional_clarify_asked"] = True
     return update

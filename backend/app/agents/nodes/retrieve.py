@@ -8,7 +8,6 @@ import math
 from langchain_core.runnables import RunnableConfig
 
 from app.agents.state import AgentState
-from app.agents.nodes.memory import build_effective_preferences
 from app.services.product_evidence import build_zdm_evidence
 
 _TOP_K = 5
@@ -19,7 +18,7 @@ _MALL_IDS = {
 }
 
 # 真实源查询文本的字段顺序。
-_SEMANTIC_ORDER = ("gender", "color", "style", "material", "category", "scene", "fit")
+_SEMANTIC_ORDER = ("gender", "color", "brand", "use_case", "category")
 
 
 def _build_real_query(prefs: dict) -> str:
@@ -147,9 +146,7 @@ def _zhidemai_to_candidates(items: list[dict]) -> list[dict]:
 
 
 async def retrieve_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
-    prefs = build_effective_preferences(
-        state.get("preferences") or {}, state.get("profile_preferences") or {},
-    )
+    prefs = dict(state.get("preferences") or {})
 
     # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话。
     query = _build_real_query(prefs) or (

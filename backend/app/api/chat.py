@@ -80,11 +80,16 @@ async def build_chat_payload(graph, cfg: dict, message: str) -> dict:
     """下单成功后的下一条用户消息必须开始新的临时导购上下文。"""
     snapshot = await graph.aget_state(cfg)
     previous_state = getattr(snapshot, "values", {}) or {}
-    return initial_state(message, reset_preferences=should_reset_session(previous_state))
+    reset = should_reset_session(previous_state)
+    return initial_state(
+        message,
+        reset_preferences=reset,
+        optional_clarify_asked=False if reset else bool(previous_state.get("optional_clarify_asked")),
+    )
 
 
 def _safe_node_update(node: str, update: dict) -> dict:
-    """Keep durable profile values in graph state, but never stream them in trace frames."""
+    """过滤消息对象与内部控制字段，保持 SSE 负载可序列化。"""
     safe = {key: value for key, value in update.items() if key != "messages"}
     preferences = safe.get("preferences")
     if isinstance(preferences, dict):
