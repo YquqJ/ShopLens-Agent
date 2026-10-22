@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from langchain_core.messages import HumanMessage
@@ -12,6 +13,8 @@ from app.services.order_query import (
 )
 from app.agents.nodes.route import _fast_path
 from app.agents.nodes.order_query import parse_order_query_node, query_orders_node, summarize_orders_node
+from app.agents.graph import build_graph
+from app.agents.state import initial_state
 
 
 NOW = datetime(2026, 10, 21, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -173,31 +176,216 @@ async def test_order_query_node_clears_previous_query_and_asks_for_time():
 
 
 @pytest.mark.anyio
-async def test_order_query_history_keeps_results_by_turn(monkeypatch):
-    async def fake_search(*_args, **_kwargs):
-        return [{"order_id": 7, "title": "降噪耳机", "final_price": 299}]
+async def test_order_query_history_keeps_results_by_turn():
+    class SearchTool:
+        name = "orders_search_orders"
 
-    monkeypatch.setattr("app.agents.nodes.order_query.order_query_service.search_orders", fake_search)
+        def __init__(self):
+            self.payload = None
+
+        async def ainvoke(self, payload):
+            self.payload = payload
+            return [{"order_id": 7, "title": "降噪耳机", "final_price": 299}]
+
+    search_tool = SearchTool()
     parsed = await parse_order_query_node({"messages": [HumanMessage("昨天买了什么")], "intent": "order_search"})
     result = await query_orders_node(
         {**parsed, "turn_id": "turn-1"},
-        {"configurable": {"profile_id": "profile-1"}},
+        {
+            "configurable": {
+                "profile_id": "profile-1",
+                "mcp_tools": {search_tool.name: search_tool},
+            }
+        },
     )
 
     assert result["order_query_history"][0]["turn_id"] == "turn-1"
     assert result["order_query_history"][0]["results"][0]["order_id"] == 7
+    assert search_tool.payload == {
+        "start_at": parsed["order_query"]["start_at"],
+        "end_at": parsed["order_query"]["end_at"],
+        "keyword": None,
+        "category": None,
+        "platform": None,
+        "profile_key": "profile-1",
+    }
 
 
 @pytest.mark.anyio
-async def test_order_summary_history_contains_summary_for_same_turn():
+async def test_order_query_unwraps_mcp_text_content_before_returning_results():
+    orders = [{
+        "order_id": 7,
+        "order_number": "202610210001001",
+        "title": "降噪耳机",
+        "image_url": "https://example.com/headphones.png",
+        "platform": "京东",
+        "final_price": 299.0,
+        "created_at": "2026-10-20T12:00:00+08:00",
+    }]
+
+    class SearchTool:
+        name = "orders_search_orders"
+
+        async def ainvoke(self, _payload):
+            return [{"type": "text", "text": json.dumps(orders, ensure_ascii=False)}]
+
+    parsed = await parse_order_query_node({
+        "messages": [HumanMessage("昨天买了什么")],
+        "intent": "order_search",
+    })
+    result = await query_orders_node(
+        {**parsed, "turn_id": "turn-mcp-content"},
+        {"configurable": {
+            "profile_id": "profile-mcp-content",
+            "mcp_tools": {SearchTool.name: SearchTool()},
+        }},
+    )
+
+    assert result["order_results"] == orders, result
+    assert result["order_query_history"][0]["results"] == orders
+
+
+@pytest.mark.anyio
+async def test_order_query_collects_orders_from_separate_mcp_text_blocks():
+    orders = [
+        {"order_id": 7, "title": "降噪耳机", "final_price": 299.0},
+        {"order_id": 8, "title": "手机壳", "final_price": 39.0},
+    ]
+
+    class SearchTool:
+        name = "orders_search_orders"
+
+        async def ainvoke(self, _payload):
+            return [
+                {"type": "text", "text": json.dumps(order, ensure_ascii=False)}
+                for order in orders
+            ]
+
+    parsed = await parse_order_query_node({
+        "messages": [HumanMessage("这两天买了什么")],
+        "intent": "order_search",
+    })
+    result = await query_orders_node(
+        {**parsed, "turn_id": "turn-separate-content"},
+        {"configurable": {
+            "profile_id": "profile-separate-content",
+            "mcp_tools": {SearchTool.name: SearchTool()},
+        }},
+    )
+
+    assert result["order_results"] == orders
+    assert result["order_query_history"][0]["results"] == orders
+
+
+@pytest.mark.anyio
+async def test_order_summary_uses_mcp_aggregation_and_keeps_history_for_same_turn():
+    class SummaryTool:
+        name = "orders_summarize_orders"
+
+        def __init__(self):
+            self.payload = None
+
+        async def ainvoke(self, payload):
+            self.payload = payload
+            return {
+                "order_count": 1,
+                "total_amount": 100.0,
+                "average_order_amount": 100.0,
+                "groups": [{"key": "jd", "order_count": 1, "total_amount": 100.0}],
+            }
+
+    summary_tool = SummaryTool()
     result = await summarize_orders_node({
         "turn_id": "turn-2",
         "order_query": {
             "label": "最近30天", "group_by": "platform",
             "start_at": "2026-09-21T00:00:00+08:00", "end_at": "2026-10-21T00:00:00+08:00",
         },
-        "order_results": [{"platform": "jd", "final_price": 100}],
+    }, {
+        "configurable": {
+            "profile_id": "profile-2",
+            "mcp_tools": {summary_tool.name: summary_tool},
+        }
     })
 
     assert result["order_query_history"][0]["turn_id"] == "turn-2"
     assert result["order_query_history"][0]["summary"]["total_amount"] == 100.0
+    assert summary_tool.payload == {
+        "start_at": "2026-09-21T00:00:00+08:00",
+        "end_at": "2026-10-21T00:00:00+08:00",
+        "keyword": None,
+        "category": None,
+        "platform": None,
+        "group_by": "platform",
+        "profile_key": "profile-2",
+    }
+
+
+@pytest.mark.anyio
+async def test_order_summary_unwraps_mcp_text_content():
+    summary = {
+        "order_count": 2,
+        "total_amount": 399.0,
+        "average_order_amount": 199.5,
+        "groups": [],
+    }
+
+    class SummaryTool:
+        name = "orders_summarize_orders"
+
+        async def ainvoke(self, _payload):
+            return [{"type": "text", "text": json.dumps(summary, ensure_ascii=False)}]
+
+    result = await summarize_orders_node(
+        {
+            "turn_id": "turn-summary-content",
+            "order_query": {
+                "start_at": "2026-10-20T00:00:00+08:00",
+                "end_at": "2026-10-22T00:00:00+08:00",
+            },
+        },
+        {"configurable": {
+            "profile_id": "profile-summary-content",
+            "mcp_tools": {SummaryTool.name: SummaryTool()},
+        }},
+    )
+
+    assert result["order_summary"] == summary
+    assert result["order_query_history"][0]["summary"] == summary
+
+
+@pytest.mark.anyio
+async def test_summary_intent_calls_aggregation_tool_without_searching_twice():
+    class SearchTool:
+        name = "orders_search_orders"
+
+        async def ainvoke(self, _payload):
+            raise AssertionError("summary flow should not call the detail search tool")
+
+    class SummaryTool:
+        name = "orders_summarize_orders"
+
+        async def ainvoke(self, _payload):
+            return {
+                "order_count": 2,
+                "total_amount": 300.0,
+                "average_order_amount": 150.0,
+                "groups": [],
+            }
+
+    graph = build_graph()
+    state = await graph.ainvoke(
+        initial_state("最近 30 天买耳机花了多少钱"),
+        {
+            "configurable": {
+                "thread_id": "summary-test",
+                "profile_id": "profile-3",
+                "mcp_tools": {
+                    SearchTool.name: SearchTool(),
+                    SummaryTool.name: SummaryTool(),
+                },
+            }
+        },
+    )
+
+    assert state["order_summary"]["order_count"] == 2

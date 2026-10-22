@@ -8,6 +8,7 @@ ShopLens 是面向电商售前场景的 LangGraph 单 Agent。系统把自然语
 - 值得买真实 MCP：通过 `langchain-mcp-adapters` 动态发现官方商品检索工具，不在业务代码中直连外部 HTTP。
 - 证据约束推荐：商品价格、商城、属性和价格标签来自值得买真实源，LLM 只负责比较取舍和推荐理由。
 - 可靠性治理：MCP 调用统一使用指数退避、`CLOSED/OPEN/HALF_OPEN` 三态熔断、降级和 OpenTelemetry/Langfuse Trace。
+- 本地 FastMCP 订单服务：Agent 通过 stdio MCP 工具执行订单明细查询和消费聚合；时间条件由应用内确定性解析，查询按当前画像隔离。
 - 自然语言订单查询：支持“昨天我买了什么”“上个月买耳机花了多少钱”等明细查询和消费统计。
 
 ## 架构
@@ -27,7 +28,7 @@ load_memory -> route -> clarify -> retrieve(值得买 MCP)
                                       v
                               place_order
 
-订单查询：route -> 时间/条件解析 -> 订单检索/聚合 MCP -> 订单卡片或统计摘要
+订单查询：route -> 时间/条件解析 -> 本地 FastMCP (stdio) -> 订单卡片或统计摘要
 ```
 
 ## 技术栈

@@ -47,6 +47,7 @@ async def init_db() -> None:
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS title_snapshot VARCHAR(200) NOT NULL DEFAULT ''"))
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS category_snapshot VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS source_url VARCHAR(512)"))
+        await conn.execute(text("ALTER TABLE orders ALTER COLUMN source_url TYPE TEXT"))
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS image_url_snapshot VARCHAR(512)"))
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS catalog_price NUMERIC(10, 2)"))
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee NUMERIC(10, 2)"))

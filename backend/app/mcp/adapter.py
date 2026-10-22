@@ -1,6 +1,9 @@
-"""值得买官方 MCP 的 LangChain 适配器。"""
+"""商品与本地订单 MCP 服务的 LangChain 适配器。"""
 
+import os
+import sys
 from contextlib import AsyncExitStack
+from pathlib import Path
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
@@ -8,6 +11,25 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from app.core.config import settings
 
 ZHI_DE_MAI_URL = "https://gw-openapi.zhidemai.com/ai-mcp/streamable/mcp"
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+
+def order_server_connection() -> dict:
+    """Run the local order FastMCP server as a persistent stdio subprocess."""
+    pythonpath = os.environ.get("PYTHONPATH")
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(
+            value for value in (str(BACKEND_DIR), pythonpath) if value
+        ),
+    }
+    return {
+        "transport": "stdio",
+        "command": sys.executable,
+        "args": ["-m", "app.mcp.order_server"],
+        "env": env,
+        "cwd": str(BACKEND_DIR),
+    }
 
 
 def haina_connection() -> dict:
@@ -19,8 +41,11 @@ def haina_connection() -> dict:
 
 
 def server_connections() -> dict[str, dict]:
-    """构造值得买 MCP 连接；未配置密钥时返回空连接。"""
-    return {"haina": haina_connection()} if settings.ZDM_API_KEY else {}
+    """构造本地订单及可选值得买 MCP 连接。"""
+    connections = {"orders": order_server_connection()}
+    if settings.ZDM_API_KEY:
+        connections["haina"] = haina_connection()
+    return connections
 
 
 SERVERS = server_connections()

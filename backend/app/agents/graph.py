@@ -59,14 +59,14 @@ def build_graph(checkpointer=None):
     )
     g.add_conditional_edges(
         "parse_order_query",
-        lambda state: "clarify" if state.get("order_clarification") else "query",
-        {"clarify": END, "query": "query_orders"},
+        lambda state: (
+            "clarify" if state.get("order_clarification")
+            else "summary" if state.get("intent") == "order_summary"
+            else "query"
+        ),
+        {"clarify": END, "query": "query_orders", "summary": "summarize_orders"},
     )
-    g.add_conditional_edges(
-        "query_orders",
-        lambda state: "summary" if state.get("intent") == "order_summary" and not state.get("order_error") else "end",
-        {"summary": "summarize_orders", "end": END},
-    )
+    g.add_edge("query_orders", END)
     g.add_edge("summarize_orders", END)
     g.add_conditional_edges(
         "clarify",

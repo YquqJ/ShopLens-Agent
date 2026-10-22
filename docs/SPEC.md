@@ -78,12 +78,12 @@ normalize_order_query(text, parsed_time) -> {keyword, category, platform, query_
 订单数据能力通过本地 FastMCP stdio 服务暴露为标准 MCP 工具，避免 Agent 直接拼接 SQL：
 
 ```text
-search_orders(start_at, end_at, keyword?, category?, platform?)
-summarize_orders(start_at, end_at, keyword?, category?, platform?, group_by?)
+search_orders(start_at, end_at, profile_key, keyword?, category?, platform?)
+summarize_orders(start_at, end_at, profile_key, keyword?, category?, platform?, group_by?)
 group_orders(orders, dimension)
 ```
 
-MCP 服务内部复用现有订单仓储/SQLAlchemy 查询和 Decimal 聚合；服务不接收用户 ID 作为本期业务参数，默认查询当前本地用户的订单集合。工具返回结构化订单快照，不返回支付敏感信息。
+订单查询与统计节点通过本地 FastMCP stdio 服务调用上述工具；时间解析仍由确定性 Tool 在应用内完成。MCP 服务内部复用现有订单仓储/SQLAlchemy 查询和 Decimal 聚合，使用应用传入的当前画像标识限制查询范围，不接受模型生成的用户标识。工具返回结构化订单快照，不返回支付敏感信息。统计意图直接调用 `summarize_orders`，避免先查询明细再重复查询做聚合。
 
 ## 商品事实与证据约束
 
