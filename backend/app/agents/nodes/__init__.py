@@ -1,1 +1,1 @@
-"""图节点：clarify / route / retrieve / compare / normalize / recommend。"""
+"""图节点：clarify / route / retrieve / recommend / order。"""

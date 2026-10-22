@@ -2,11 +2,9 @@
 import type {
   ConversationDetail,
   ConversationSummary,
-  FunnelStats,
+  OrdersPage,
   ProfilePreferences,
   SSEEvent,
-  SourceMode,
-  SourceModes,
 } from './types'
 
 const PROFILE_ID_STORAGE_KEY = 'shoplens.profile_id'
@@ -84,13 +82,11 @@ export function chatStream(
   threadId: string,
   message: string,
   onEvent: (ev: SSEEvent) => void,
-  sourceMode: SourceMode = 'mock',
 ): Promise<void> {
   return postSSE('/api/chat', {
     message,
     thread_id: threadId,
     profile_id: getProfileId(),
-    source_mode: sourceMode,
   }, onEvent)
 }
 
@@ -110,28 +106,29 @@ export function resumeStream(
   }, onEvent)
 }
 
-export async function recordEvent(
-  threadId: string,
-  eventType: 'impression' | 'click' | 'order',
-  skuId?: string,
-): Promise<void> {
-  await fetch('/api/conversion', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      thread_id: threadId,
-      profile_id: getProfileId(),
-      event_type: eventType,
-      sku_id: skuId ?? null,
-    }),
+export async function fetchOrders(filters: {
+  page: number
+  pageSize: number
+  startDate?: string
+  endDate?: string
+  keyword?: string
+  category?: string
+}): Promise<OrdersPage> {
+  const params = new URLSearchParams({
+    profile_id: getProfileId(),
+    page: String(filters.page),
+    page_size: String(filters.pageSize),
   })
-}
-
-export async function fetchFunnel(): Promise<FunnelStats> {
-  const params = new URLSearchParams({ profile_id: getProfileId() })
-  const resp = await fetch(`/api/funnel?${params}`)
-  if (!resp.ok) throw new Error(`漏斗统计请求失败：${resp.status}`)
-  return resp.json()
+  if (filters.startDate) params.set('start_date', filters.startDate)
+  if (filters.endDate) params.set('end_date', filters.endDate)
+  if (filters.keyword?.trim()) params.set('keyword', filters.keyword.trim())
+  if (filters.category) params.set('category', filters.category)
+  const resp = await fetch(`/api/orders?${params}`)
+  if (!resp.ok) {
+    const detail = await resp.json().catch(() => null) as { detail?: string } | null
+    throw new Error(detail?.detail || `订单列表加载失败：${resp.status}`)
+  }
+  return resp.json() as Promise<OrdersPage>
 }
 
 export async function fetchConversations(): Promise<ConversationSummary[]> {
@@ -187,27 +184,4 @@ export async function fetchProfilePreferences(): Promise<ProfilePreferences> {
   if (!resp.ok) throw new Error(`偏好记忆加载失败：${resp.status}`)
   const data = (await resp.json()) as { profile_preferences?: ProfilePreferences }
   return data.profile_preferences ?? {}
-}
-
-export async function fetchSourceModes(): Promise<SourceModes> {
-  const resp = await fetch('/api/source-modes')
-  if (!resp.ok) throw new Error(`数据源模式加载失败：${resp.status}`)
-  return (await resp.json()) as SourceModes
-}
-
-// 熔断演示：注入/清除某个 mock 源的故障（rate 0 清除，1 表示 100% 失败）
-export async function setFailRate(source: string, rate: number): Promise<void> {
-  await fetch('/api/debug/failrate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source, rate }),
-  })
-}
-
-// 熔断演示：查询各源熔断器当前状态（closed/open/half_open）
-export async function fetchBreakers(): Promise<Record<string, string>> {
-  const resp = await fetch('/api/debug/breakers')
-  if (!resp.ok) throw new Error(`熔断状态查询失败：${resp.status}`)
-  const data = (await resp.json()) as { sources: Record<string, string> }
-  return data.sources ?? {}
 }

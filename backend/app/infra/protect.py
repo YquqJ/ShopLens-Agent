@@ -2,8 +2,7 @@
 
 设计决策：
 - 在 MCP 工具外层统一包装（而非散落在各节点），源状态全局共享，节点只做编排；
-- source 从工具名解析：price_jd_get_quote → jd，coupon_get_coupons → coupon，
-  logistics_get_delivery → logistics——三者独立熔断；
+- source 从工具名和描述解析，为值得买商品检索等工作负载隔离熔断；
 - 熔断打开 → 直接抛 SourceError（不触发子进程）；重试耗尽 → record_failure + SourceError；
 - SourceRegistry 持有每源 breaker、重试配置、错误预算，protect() 产出一份 name→工具 映射。
 """
@@ -21,8 +20,13 @@ class SourceError(Exception):
         super().__init__(f"[{source}] {reason}")
 
 
-def source_of(tool_name: str) -> str:
-    """工具名 → 源名：price_jd_get_quote → jd；coupon_* → coupon；logistics_* → logistics。"""
+def source_of(tool_name: str, description: str = "") -> str:
+    """Map tools to isolated source breakers, including separate Haina workloads."""
+    lowered = f"{tool_name} {description}".lower()
+    if "haina" in lowered or "zhidemai" in lowered:
+        if any(marker in lowered for marker in ("product", "商品", "产品")):
+            return "haina_product"
+        return "haina_unknown"
     if tool_name.startswith("price_"):
         return tool_name.split("_")[1]
     return tool_name.split("_")[0]
@@ -34,6 +38,9 @@ class ProtectedTool:
         self.source = source
         self._registry = registry
         self.name = getattr(inner, "name", None)
+        self.description = getattr(inner, "description", "")
+        self.args = getattr(inner, "args", {})
+        self.args_schema = getattr(inner, "args_schema", None)
 
     async def ainvoke(self, *args, **kwargs):
         self._registry.record_logical_call(self.source)
@@ -113,7 +120,7 @@ class SourceRegistry:
     def protect(self, tools: dict) -> dict:
         """给一批 name→工具 套保护包装，返回 name→ProtectedTool。"""
         return {
-            name: ProtectedTool(tool, source_of(name), self)
+            name: ProtectedTool(tool, source_of(name, getattr(tool, "description", "")), self)
             for name, tool in tools.items()
         }
 

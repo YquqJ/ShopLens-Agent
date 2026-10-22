@@ -1,7 +1,7 @@
 """分级重试：MCP 源临时故障重试+退避；不可重试动作（下单）不重试。
 
 设计决策：
-- 用 tenacity 统一退避（指数+抖动）；MCP 比价源的下游故障视为「可重试」（瞬时抖动），
+- 用 tenacity 统一退避（指数+抖动）；MCP 下游瞬时故障视为可重试，
   由 call_with_retry 做 attempts 次尝试后仍失败才上抛；
 - 下单（place_order）不可重试：扣款/落库类动作不做静默重试，失败交 HITL 人工或显式报错，
   故本模块只服务「可重试」的 MCP 源调用，不可重试路径显式 attempts=1 或根本不套本函数。
@@ -10,13 +10,27 @@ from collections.abc import Callable
 
 from tenacity import (
     AsyncRetrying,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential_jitter,
 )
 
-# 默认可重试 = 任意异常（MCP 源下游瞬时故障统一按可重试处理）
-_DEFAULT_RETRYABLE = retry_if_exception_type(Exception)
+
+def _is_transient_failure(error: BaseException) -> bool:
+    """Retry network failures and HTTP throttling/server errors, not bad requests."""
+    if isinstance(error, (TimeoutError, ConnectionError, OSError)):
+        return True
+
+    response = getattr(error, "response", None)
+    status_code = getattr(error, "status_code", None) or getattr(response, "status_code", None)
+    if status_code == 429 or (isinstance(status_code, int) and 500 <= status_code < 600):
+        return True
+
+    error_name = type(error).__name__.lower()
+    return any(marker in error_name for marker in (
+        "timeout", "connecterror", "networkerror", "readerror", "writeerror",
+        "remoteprotocolerror",
+    ))
 
 
 async def call_with_retry(
@@ -39,7 +53,7 @@ async def call_with_retry(
     retryer = AsyncRetrying(
         stop=stop_after_attempt(attempts),
         wait=wait_exponential_jitter(initial=base_seconds, max=max_seconds),
-        retry=_DEFAULT_RETRYABLE,
+        retry=retry_if_exception(_is_transient_failure),
         reraise=True,
         before_sleep=before_sleep,
     )

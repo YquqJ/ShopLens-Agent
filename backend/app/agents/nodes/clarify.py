@@ -1,32 +1,30 @@
-"""澄清节点：LLM 从最新用户消息提取结构化偏好，关键信息缺失则反问。
+"""澄清节点：LLM 从最新用户消息提取精简的结构化购物需求。
 
 设计决策：
 - 关键信息 = 品类 + 预算，二者缺一即 needs_clarification，追问收敛需求；
 - 偏好用结构化输出（Pydantic）而非 JSON 字符串解析，避免格式抖动；
 - 多轮累积：preferences 带 merge reducer（state.py）跨轮保留；
-  clarify 把历史偏好喂回 prompt，并按「合并后」结果判断缺哪些字段，
-  不再只信 LLM 对最新消息的 needs_clarification（它会因读不到历史而误追问）。
+- 追问必须带上已确认需求与上一轮问句，否则「预算 100」这类省略回答抽不出字段，
+  会与已填字段一起触发同一句追问无限循环；
+- 品类专属字段只做一次可选补充询问，不阻塞商品检索。
 """
-import json
+import re
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.agents.llm import MAIN_MODEL, get_structured_llm
-from app.agents.nodes.memory import build_effective_preferences
 from app.agents.state import AgentState, merge_preferences
 
 
 class Preferences(BaseModel):
-    category: str | None = Field(None, description="服饰品类，如 T恤/衬衫/卫衣/外套/裤装/鞋")
+    category: str | None = Field(None, description="商品品类，如 手机/耳机/外套/厨房用品")
     budget: float | None = Field(None, description="预算（元）")
-    color: str | None = Field(None, description="本次颜色偏好，如 黑色/深蓝（无则留空）")
-    style: str | None = Field(None, description="风格偏好，如 简约/复古（无则留空）")
-    material: str | None = Field(None, description="材质，如 纯棉/亚麻/羊毛（无则留空）")
-    scene: str | None = Field(None, description="穿着场景，如 通勤/周末/旅行（无则留空）")
-    fit: str | None = Field(None, description="版型偏好，如 修身/宽松/直筒/落肩（无则留空）")
-    gender: str | None = Field(None, description="性别偏好，如 男款/女款（无则留空）")
     requirements: str | None = Field(None, description="无法归入闭集字段的功能/描述需求，如 显瘦一点、透气（无则留空）")
+    gender: str | None = Field(None, description="服饰性别偏好，如 男款/女款/中性（无则留空）")
+    color: str | None = Field(None, description="服饰颜色偏好，如 黑色/深蓝（无则留空）")
+    brand: str | None = Field(None, description="数码商品品牌偏好（无则留空）")
+    use_case: str | None = Field(None, description="数码商品主要用途，如 拍照/游戏/日常使用（无则留空）")
 
 
 class ClarifyResult(BaseModel):
@@ -36,22 +34,47 @@ class ClarifyResult(BaseModel):
 
 
 _SYSTEM = (
-    "你是导购澄清助手。从用户一句话里提取购物偏好（品类/预算/颜色/风格/材质/场景/版型/性别），拿不准的字段留空。"
-    "商品为服饰，品类可为T恤/衬衫/卫衣/外套/裤装/鞋；版型可填 修身/宽松/直筒/落肩，性别可填男款/女款。"
-    "无法归入这些闭集字段的功能/描述语（如 显瘦一点、透气）填到 requirements。"
-    "关键信息=品类+预算+性别，缺任一即 needs_clarification=True。性别只允许男款或女款。"
+    "你是导购澄清助手。从用户一句话里提取精简购物需求：通用字段为品类、预算、其他要求；服饰只提取性别和颜色；数码只提取品牌和主要用途。"
+    "拿不准的字段留空，不能把服饰字段填到数码需求，也不能把数码字段填到服饰需求。"
+    "如果用户本轮更换了商品品类，视为新的商品需求；旧品类的预算、品牌、颜色、性别、用途及其他要求不可自动沿用，只有本轮再次明确提到时才填写。"
+    "关键信息=品类+预算，缺任一即 needs_clarification=True。"
 )
+
+_CATEGORY_SCOPED_FIELDS = (
+    "budget", "brand", "color", "gender", "use_case", "requirements",
+)
+
+_PREFERENCE_FIELDS = frozenset(Preferences.model_fields)
+_CLOTHING_MARKERS = ("服饰", "衣", "裤", "裙", "鞋", "帽", "袜", "外套", "衬衫", "卫衣", "T恤")
+_DIGITAL_MARKERS = ("数码", "手机", "电脑", "笔记本", "平板", "耳机", "相机", "手表")
+_COLOR_TERMS = (
+    "黑色", "白色", "蓝色", "红色", "灰色", "绿色", "黄色", "粉色", "紫色", "橙色",
+    "深蓝", "浅蓝", "米色", "卡其",
+)
+_GENDER_TERMS = ("男款", "女款", "中性款", "中性", "男士", "女士")
+# 追问轮次上限：达到上限后只追问缺失的必填字段。
+MAX_CLARIFY_ROUNDS = 3
+
+_BUDGET_KEYWORD_RE = re.compile(r"(?:预算|价位|价格)\s*[:：]?\s*(\d{2,6}(?:\.\d+)?)")
+_BUDGET_BARE_RE = re.compile(r"^\s*(\d{2,6}(?:\.\d+)?)\s*(?:元|块|以内|以下|左右|封顶)?\s*$")
+
+
+def normalize_preferences(raw: dict) -> dict:
+    """只保留精简需求字段，并丢弃空值。"""
+    normalized = {
+        key: value for key, value in (raw or {}).items()
+        if key in _PREFERENCE_FIELDS and value not in (None, "", [])
+    }
+    return normalized
 
 
 def _missing(prefs: dict) -> list[str]:
-    """合并后仍缺的关键字段（品类/预算/性别）追问文案。"""
+    """Fields required before searching any product category."""
     missing = []
-    if not prefs.get("category"):
-        missing.append("想买什么服饰品类（如T恤、衬衫、外套等）")
+    if not str(prefs.get("category") or "").strip():
+        missing.append("想买什么商品")
     if prefs.get("budget") is None:
         missing.append("预算大概多少")
-    if not prefs.get("gender") and not prefs.get("preferred_genders"):
-        missing.append("男款还是女款")
     return missing
 
 
@@ -63,46 +86,170 @@ def _default_question(prefs: dict) -> str:
     return "能否再补充一下你的偏好？"
 
 
+def _known_summary(prefs: dict) -> str:
+    """把已确认需求拼成简短中文，供追问时告知用户进度。"""
+    parts = []
+    if prefs.get("category"):
+        parts.append(str(prefs["category"]))
+    if prefs.get("budget") is not None:
+        budget = float(prefs["budget"])
+        parts.append(f"预算 ¥{int(budget) if budget.is_integer() else budget:.2f}")
+    for key in ("gender", "color", "brand", "use_case", "requirements"):
+        if prefs.get(key):
+            parts.append(str(prefs[key]))
+    return "、".join(parts)
+
+
+def _missing_question(prefs: dict) -> str:
+    """只针对缺失的关键字段追问，并回显已确认需求。"""
+    missing = _missing(prefs)
+    if not missing:
+        return ""
+    known = _known_summary(prefs)
+    question = "还需要确认：" + "、".join(missing) + "？"
+    return f"已了解 {known}。{question}" if known else question
+
+
+def _mentions_known_field(question: str, prefs: dict) -> bool:
+    """判断 LLM 问句是否在追问已经确认的关键字段。"""
+    text = question or ""
+    if prefs.get("category") and any(marker in text for marker in ("品类", "什么商品", "想买什么", "哪类")):
+        return True
+    if prefs.get("budget") is not None and "预算" in text:
+        return True
+    return False
+
+
+def _clarify_question(
+    llm_question: str,
+    prefs: dict,
+    previous_question: str | None,
+) -> str:
+    """优先用模型问句，但不得追问已确认字段或原样重复上一句。"""
+    candidate = (llm_question or "").strip()
+    if candidate and not _mentions_known_field(candidate, prefs) and candidate != (previous_question or "").strip():
+        return candidate
+    return _missing_question(prefs)
+
+
+def _backfill_answer(text: str, prefs: dict) -> dict:
+    """从「预算 100」「100 元」「男款」这类省略回答补齐字段。
+
+    模型对脱离上下文的短答经常抽不出字段；这里做确定性兜底，避免同一问题反复追问。
+    """
+    answer = (text or "").strip()
+    if not answer or len(answer) > 30:
+        return {}
+    filled: dict = {}
+    if prefs.get("budget") is None:
+        match = _BUDGET_KEYWORD_RE.search(answer) or _BUDGET_BARE_RE.match(answer)
+        if match:
+            filled["budget"] = float(match.group(1))
+    if not prefs.get("gender"):
+        gender = next((term for term in _GENDER_TERMS if term in answer), None)
+        if gender:
+            filled["gender"] = gender
+    if not prefs.get("color"):
+        color = next((term for term in _COLOR_TERMS if term in answer), None)
+        if color:
+            filled["color"] = color
+    return filled
+
+
+def _context_prompt(prefs: dict, previous_question: str | None) -> str:
+    """给模型提供已确认需求与上一轮追问，避免短答脱离上下文。"""
+    lines = []
+    known = _known_summary(prefs)
+    if known:
+        lines.append(f"已确认需求：{known}")
+    if previous_question:
+        lines.append(f"上一轮追问：{previous_question}")
+    lines.append("只提取本轮回答中的新信息；已确认字段不要重复填写，也不要再追问它们。")
+    return "\n".join(lines)
+
+
+def _category_kind(category: str | None) -> str | None:
+    text = str(category or "")
+    if any(marker in text for marker in _CLOTHING_MARKERS):
+        return "clothing"
+    if any(marker in text for marker in _DIGITAL_MARKERS):
+        return "digital"
+    return None
+
+
+def _optional_question(prefs: dict) -> str:
+    """类目专属字段只作为一次补充询问，不影响进入检索；只问确实缺失的字段。"""
+    kind = _category_kind(prefs.get("category"))
+    if kind == "clothing":
+        parts = []
+        if not prefs.get("gender"):
+            parts.append("更偏向男款、女款还是中性款？")
+        if not prefs.get("color"):
+            parts.append("颜色有偏好吗？")
+        return "".join(parts)
+    if kind == "digital":
+        parts = []
+        if not prefs.get("brand"):
+            parts.append("有偏好的品牌吗？")
+        if not prefs.get("use_case"):
+            parts.append("主要用于拍照、游戏，还是日常使用？")
+        return "".join(parts)
+    return ""
+
+
 async def clarify_node(state: AgentState) -> dict:
     structured = get_structured_llm(MAIN_MODEL, ClarifyResult)
     latest = state["messages"][-1].content if state["messages"] else ""
-    prev = build_effective_preferences(
-        state.get("preferences") or {}, state.get("profile_preferences") or {},
-    )
+    prev = dict(state.get("preferences") or {})
+    previous_question = str(state.get("clarify_question") or "")
 
-    # 把历史偏好喂回 prompt：让 LLM 在已确认信息上补缺失字段，避免重复追问
-    system = _SYSTEM
-    if prev:
-        system += (
-            "\n历史已确认偏好：" + json.dumps(prev, ensure_ascii=False)
-            + "。本轮在其基础上补充或纠正，未提及字段保持原值。"
-        )
     result: ClarifyResult = await structured.ainvoke([
-        SystemMessage(system), HumanMessage(latest),
+        SystemMessage(_SYSTEM),
+        SystemMessage(_context_prompt(prev, previous_question)),
+        HumanMessage(latest),
     ])
 
-    # 本轮提取 + 历史合并（非空覆盖，空字段回退历史）
-    new_prefs = {
-        key: value
-        for key, value in result.preferences.model_dump().items()
-        if value not in (None, "", [])
-    }
-    merged = merge_preferences(prev, new_prefs)
+    # A changed product category starts a fresh set of product-specific constraints.
+    new_prefs = normalize_preferences(result.preferences.model_dump())
+    for key, value in _backfill_answer(str(latest), {**prev, **new_prefs}).items():
+        new_prefs.setdefault(key, value)
+    category_changed = bool(
+        new_prefs.get("category")
+        and prev.get("category")
+        and str(new_prefs["category"]).strip() != str(prev["category"]).strip()
+    )
+    preference_update = dict(new_prefs)
+    if category_changed:
+        preference_update["__clear_preference_fields__"] = _CATEGORY_SCOPED_FIELDS
+    merged = merge_preferences(prev, preference_update)
 
-    # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification
+    # 关键信息按「合并后」判断，而非只信 LLM 对最新消息的 needs_clarification。
     needs = bool(_missing(merged))
+    optional_asked = False if category_changed else bool(state.get("optional_clarify_asked"))
+    rounds = int(state.get("hop_count") or 0) + 1
 
     update: dict = {
-        "preferences": new_prefs,   # 经 merge reducer 与历史合并
+        "preferences": preference_update,   # 经 merge reducer 与历史合并
         "trace_preferences": merged,
-        "hop_count": state.get("hop_count", 0) + 1,
+        "hop_count": rounds,
+        "optional_clarify_asked": optional_asked,
     }
     if needs:
         update["needs_action"] = "clarify"
-        question = result.clarify_question or _default_question(merged)
+        if rounds < MAX_CLARIFY_ROUNDS:
+            question = _clarify_question(result.clarify_question, merged, previous_question)
+        else:
+            question = _missing_question(merged)
+        question = question or _default_question(merged)
         update["clarify_question"] = question
         update["messages"] = [AIMessage(question)]
     else:
+        # 只有品类和预算齐备才进入检索。
         update["needs_action"] = "shopping"
-        update["clarify_question"] = ""
+        # 刚回答完上一轮追问时不再追加可选问题，避免「问完一个又问一个」的连环追问。
+        question = "" if (optional_asked or needs or previous_question) else _optional_question(merged)
+        update["clarify_question"] = question
+        if question:
+            update["messages"] = [AIMessage(question)]
+            update["optional_clarify_asked"] = True
     return update

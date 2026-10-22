@@ -1,7 +1,7 @@
-"""M4 验收驱动：对话 → 推荐 → interrupt 挂起 → 确认 → 二次询价 → 落库。
+"""端到端验收驱动：对话 → 推荐 → interrupt 挂起 → 确认 → 落库。
 
 验收对照（docs/SPEC.md M4）：
-- 全链路：对话 → 草稿订单 → interrupt 挂起 → 确认 → 二次询价锁价 → 下单落库。
+- 全链路：对话 → 草稿订单 → interrupt 挂起 → 确认 → 下单落库。
 """
 import asyncio
 import json
@@ -31,9 +31,7 @@ def _initial_state() -> AgentState:
         "reply": "",
         "candidates": [],
         "zdm_mode": False,
-        "quotes": [],
         "degraded_sources": [],
-        "normalized": [],
         "recommendation": {},
         "draft_order": None,
         "order": None,
@@ -62,13 +60,13 @@ async def main() -> None:
         print(json.dumps(intr["draft_order"], ensure_ascii=False, indent=2))
         assert snapshot.values["recommendation"]["items"], "未产出可溯源推荐"
 
-        # ② 确认 → 二次询价 → 落库
+        # ② 确认 → 落库
         final = await graph.ainvoke(Command(resume={"confirm": True}), cfg)
         order = final.get("order")
         print("\n=== 落库订单 ===")
         print(json.dumps(order, ensure_ascii=False, indent=2))
         assert order and order.get("status") == "placed", "订单未落库"
-        print("\nPASS：全链路 对话→推荐→interrupt→确认→锁价→落库 跑通")
+        print("\nPASS：全链路 对话→推荐→interrupt→确认→落库 跑通")
 
 
 if __name__ == "__main__":

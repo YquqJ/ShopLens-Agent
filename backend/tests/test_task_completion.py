@@ -1,13 +1,39 @@
+import json
+from collections import Counter
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 import pytest
 
 from app.eval.task_completion import (
+    TASK_SET,
     UsageCollector,
     completion_summary,
     require_order_eval_opt_in,
     task_succeeded,
 )
+
+
+def test_task_set_has_one_hundred_balanced_agent_workflow_cases() -> None:
+    tasks = json.loads(TASK_SET.read_text(encoding="utf-8"))["tasks"]
+
+    assert len(tasks) == 100
+    assert len({task["id"] for task in tasks}) == 100
+    assert Counter(task["type"] for task in tasks) == {
+        "recommendation": 20,
+        "clarification": 20,
+        "order": 12,
+        "cancel": 8,
+        "order_search": 12,
+        "order_summary": 12,
+        "order_clarification": 6,
+        "other": 10,
+    }
+    assert all(task.get("message") or task.get("messages") for task in tasks)
+    assert all(len(task["messages"]) >= 2 for task in tasks if task["type"] == "clarification")
+    assert all(task.get("fixture") for task in tasks if task["type"] in {
+        "order_search", "order_summary", "order_clarification",
+    })
+    assert all(task.get("resume") is True for task in tasks if task["type"] == "order")
 
 
 def test_recommendation_task_requires_a_non_empty_recommendation() -> None:
@@ -24,11 +50,11 @@ def test_recommendation_task_requires_a_non_empty_recommendation() -> None:
 def test_order_task_requires_successful_order_placement() -> None:
     assert task_succeeded(
         {"type": "order"},
-        {"order_status": "placed", "nodes": ["confirm", "lock_price", "place_order"]},
+        {"order_status": "placed", "nodes": ["confirm", "place_order"]},
     ) is True
     assert task_succeeded(
         {"type": "order"},
-        {"order_status": "confirmed", "nodes": ["confirm", "lock_price"]},
+        {"order_status": "confirmed", "nodes": ["confirm"]},
     ) is False
 
 
@@ -55,6 +81,85 @@ def test_clarification_task_requires_clarify_then_recommend() -> None:
     assert task_succeeded(
         {"type": "clarification"},
         {"clarify_count": 1, "recommendation_items": 0, "nodes": ["clarify"]},
+    ) is False
+
+
+def test_order_search_task_requires_query_tool_and_expected_result_count() -> None:
+    assert task_succeeded(
+        {"type": "order_search", "expected_count": 2},
+        {
+            "nodes": ["route", "parse_order_query", "query_orders"],
+            "order_results": [{"order_id": 1}, {"order_id": 2}],
+        },
+    ) is True
+    assert task_succeeded(
+        {"type": "order_search", "expected_count": 2},
+        {
+            "nodes": ["route", "parse_order_query", "query_orders"],
+            "order_results": [{"order_id": 1}],
+        },
+    ) is False
+
+
+def test_order_summary_task_requires_aggregation_and_expected_metrics() -> None:
+    assert task_succeeded(
+        {
+            "type": "order_summary",
+            "expected_summary": {
+                "order_count": 2,
+                "total_amount": 399.0,
+                "average_order_amount": 199.5,
+            },
+        },
+        {
+            "nodes": ["route", "parse_order_query", "summarize_orders"],
+            "order_summary": {
+                "order_count": 2,
+                "total_amount": 399.0,
+                "average_order_amount": 199.5,
+                "groups": [],
+            },
+        },
+    ) is True
+    assert task_succeeded(
+        {
+            "type": "order_summary",
+            "expected_summary": {"order_count": 2, "total_amount": 399.0},
+        },
+        {
+            "nodes": ["route", "parse_order_query", "summarize_orders"],
+            "order_summary": {"order_count": 2, "total_amount": 398.0},
+        },
+    ) is False
+
+
+def test_order_clarification_task_requires_clarification_then_terminal_query() -> None:
+    assert task_succeeded(
+        {
+            "type": "order_clarification",
+            "expected_terminal": "order_search",
+            "expected_count": 1,
+        },
+        {
+            "order_clarification_count": 1,
+            "nodes": [
+                "route", "parse_order_query", "route",
+                "parse_order_query", "query_orders",
+            ],
+            "order_results": [{"order_id": 1}],
+        },
+    ) is True
+    assert task_succeeded(
+        {
+            "type": "order_clarification",
+            "expected_terminal": "order_search",
+            "expected_count": 1,
+        },
+        {
+            "order_clarification_count": 0,
+            "nodes": ["route", "parse_order_query", "query_orders"],
+            "order_results": [{"order_id": 1}],
+        },
     ) is False
 
 

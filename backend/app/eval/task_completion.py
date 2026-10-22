@@ -1,7 +1,7 @@
 """端到端任务完成率评测。
 
 评测口径：每条任务预先声明期望的业务结果，由完整 StateGraph 执行并按最终状态判定，
-不使用 LLM-as-judge。脚本同时保留节点轨迹和失败原因，便于定位是澄清、检索、比价还是下单失败。
+不使用 LLM-as-judge。脚本同时保留节点轨迹和失败原因，便于定位是澄清、检索、知识增强还是下单失败。
 重复运行：TASK_EVAL_REPEATS=3 uv run python -m app.eval.task_completion
 包含真实下单写库；需先配置隔离评测库，再显式设置 TASK_EVAL_ALLOW_DB_WRITES=1。
 """
@@ -17,6 +17,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from langchain_core.callbacks import BaseCallbackHandler
+from sqlalchemy import delete, select
+
+from app.db.models import Conversation, Order, User
+from app.db.session import async_session_factory, init_db
 
 TASK_SET = Path(__file__).with_name("task_set.json")
 
@@ -35,6 +39,35 @@ def task_succeeded(task: dict, observation: dict) -> bool:
         )
     if task_type == "order":
         return observation.get("order_status") == "placed" and "place_order" in nodes
+    if task_type == "order_search":
+        if "query_orders" not in nodes or observation.get("order_error"):
+            return False
+        expected_ids = task.get("expected_order_ids")
+        actual = observation.get("order_results") or []
+        if expected_ids is not None:
+            return [item.get("order_id") for item in actual] == expected_ids
+        return len(actual) == task.get("expected_count", len(actual))
+    if task_type == "order_summary":
+        if "summarize_orders" not in nodes or observation.get("order_error"):
+            return False
+        actual = observation.get("order_summary") or {}
+        expected = task.get("expected_summary") or {}
+        return all(actual.get(key) == value for key, value in expected.items())
+    if task_type == "order_clarification":
+        if observation.get("order_clarification_count", 0) < 1:
+            return False
+        expected_terminal = task.get("expected_terminal")
+        if expected_terminal == "order_search":
+            if "query_orders" not in nodes or observation.get("order_error"):
+                return False
+            return len(observation.get("order_results") or []) == task.get("expected_count", 0)
+        if expected_terminal == "order_summary":
+            if "summarize_orders" not in nodes or observation.get("order_error"):
+                return False
+            actual = observation.get("order_summary") or {}
+            expected = task.get("expected_summary") or {}
+            return all(actual.get(key) == value for key, value in expected.items())
+        return False
     if task_type == "cancel":
         return (
             observation.get("order_status") == "cancelled" and "confirm" in nodes
@@ -92,11 +125,14 @@ def _sample_summary(samples: list[float | int]) -> dict:
 
 
 def require_order_eval_opt_in(tasks: list[dict]) -> None:
-    """Require an explicit opt-in before the evaluator can persist simulated orders."""
-    has_order = any(task.get("type") == "order" for task in tasks)
-    if has_order and os.getenv("TASK_EVAL_ALLOW_DB_WRITES") != "1":
+    """Require an explicit opt-in before the evaluator writes isolated fixtures."""
+    writes_database = any(
+        task.get("type") in {"order", "order_search", "order_summary", "order_clarification"}
+        for task in tasks
+    )
+    if writes_database and os.getenv("TASK_EVAL_ALLOW_DB_WRITES") != "1":
         raise RuntimeError(
-            "任务集包含下单场景，会写入数据库；请先配置隔离评测库并设置 "
+            "任务集包含下单或订单查询场景，会写入隔离评测数据库；请先配置隔离评测库并设置 "
             "TASK_EVAL_ALLOW_DB_WRITES=1 后再运行"
         )
 
@@ -142,6 +178,16 @@ def _merge_observation(observation: dict, update: dict, node: str) -> None:
         observation["reply"] = update["reply"]
     if "clarify_question" in update and update["clarify_question"]:
         observation["clarify_count"] = observation.get("clarify_count", 0) + 1
+    if "order_clarification" in update and update["order_clarification"]:
+        observation["order_clarification_count"] = (
+            observation.get("order_clarification_count", 0) + 1
+        )
+    if "order_results" in update:
+        observation["order_results"] = update.get("order_results") or []
+    if "order_summary" in update and update.get("order_summary") is not None:
+        observation["order_summary"] = update["order_summary"]
+    if "order_error" in update:
+        observation["order_error"] = update["order_error"]
     recommendation = update.get("recommendation")
     if isinstance(recommendation, dict):
         observation["recommendation_items"] = len(recommendation.get("items") or [])
@@ -162,22 +208,104 @@ async def _run_turn(graph, config: dict, message: str, observation: dict) -> boo
     return bool(snapshot.interrupts)
 
 
+_ORDER_FIXTURES = {
+    "yesterday_mixed": [
+        {"title": "降噪耳机", "category": "耳机", "platform": "jd", "price": 299.0, "day_offset": -1},
+        {"title": "手机壳", "category": "手机配件", "platform": "taobao", "price": 39.0, "day_offset": -1},
+        {"title": "跑鞋", "category": "鞋", "platform": "jd", "price": 399.0, "day_offset": -3},
+    ],
+    "recent_headphones": [
+        {"title": "降噪耳机", "category": "耳机", "platform": "jd", "price": 299.0, "day_offset": -2},
+        {"title": "蓝牙耳机", "category": "耳机", "platform": "jd", "price": 100.0, "day_offset": -10},
+        {"title": "衬衫", "category": "衬衫", "platform": "taobao", "price": 200.0, "day_offset": -40},
+    ],
+    "platform_split": [
+        {"title": "键盘", "category": "键盘", "platform": "jd", "price": 199.0, "day_offset": -1},
+        {"title": "鼠标", "category": "鼠标", "platform": "jd", "price": 100.0, "day_offset": -2},
+        {"title": "手机壳", "category": "手机配件", "platform": "taobao", "price": 50.0, "day_offset": -3},
+    ],
+    "category_split": [
+        {"title": "降噪耳机", "category": "耳机", "platform": "jd", "price": 299.0, "day_offset": -2},
+        {"title": "衬衫", "category": "衬衫", "platform": "taobao", "price": 200.0, "day_offset": -3},
+        {"title": "外套", "category": "外套", "platform": "jd", "price": 500.0, "day_offset": -4},
+    ],
+    "empty": [
+        {"title": "降噪耳机", "category": "耳机", "platform": "jd", "price": 299.0, "day_offset": -20},
+    ],
+}
+
+
+async def _seed_order_fixture(task: dict, profile_key: str) -> None:
+    fixture_name = task.get("fixture")
+    specs = _ORDER_FIXTURES.get(fixture_name)
+    if specs is None:
+        raise ValueError(f"未知订单评测夹具: {fixture_name!r}")
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    async with async_session_factory() as session:
+        user = User(external_id=profile_key)
+        session.add(user)
+        await session.flush()
+        conversation = Conversation(thread_id=f"fixture-{profile_key}", user_id=user.id)
+        session.add(conversation)
+        await session.flush()
+        for index, spec in enumerate(specs, start=1):
+            created_at = (now + timedelta(days=spec["day_offset"])).replace(
+                hour=12, minute=index, second=0, microsecond=0
+            )
+            session.add(Order(
+                order_intent_id=f"{profile_key}-intent-{index}",
+                order_number=f"{profile_key[-8:]}{index:04d}",
+                conversation_id=conversation.id,
+                user_id=user.id,
+                sku_id=f"EVAL-{profile_key[-8:]}-{index}",
+                title_snapshot=spec["title"],
+                category_snapshot=spec["category"],
+                platform=spec["platform"],
+                catalog_price=spec["price"],
+                quoted_price=spec["price"],
+                shipping_fee=0,
+                final_price=spec["price"],
+                status="placed",
+                created_at=created_at,
+                updated_at=created_at,
+            ))
+        await session.commit()
+
+
+async def _cleanup_order_fixture(profile_key: str) -> None:
+    async with async_session_factory() as session:
+        user = await session.scalar(select(User).where(User.external_id == profile_key))
+        if user is None:
+            return
+        await session.execute(delete(Order).where(Order.user_id == user.id))
+        await session.execute(delete(Conversation).where(Conversation.user_id == user.id))
+        await session.execute(delete(User).where(User.id == user.id))
+        await session.commit()
+
+
 async def _run_task(graph, tools: dict, task: dict) -> dict:
     from langgraph.types import Command
 
     started_at = time.perf_counter()
     usage = UsageCollector()
     thread_id = f"task-e2e-{uuid4().hex[:10]}"
+    profile_key = f"task-profile-{uuid4().hex[:12]}"
     config = {
         "configurable": {
             "thread_id": thread_id,
-            "profile_id": thread_id,
+            "profile_id": profile_key,
             "mcp_tools": tools,
         },
         "callbacks": [usage],
     }
     observation: dict = {}
+    fixture_profile = profile_key if task.get("fixture") else None
     try:
+        if fixture_profile:
+            await _seed_order_fixture(task, fixture_profile)
         messages = task.get("messages") or [task["message"]]
         interrupted = False
         for message in messages:
@@ -186,27 +314,21 @@ async def _run_task(graph, tools: dict, task: dict) -> dict:
         if task.get("resume") is not None:
             if not interrupted:
                 raise RuntimeError("任务预期进入确认中断，但未发现 interrupt")
-            # 价格上涨时图会再次进入 confirm；正向确认任务最多允许有限次重确认，
-            # 避免评测因价格波动陷入无限循环。
-            for _ in range(3):
-                resume = {"confirm": bool(task["resume"])}
-                async for event in graph.astream(Command(resume=resume), config, stream_mode="updates"):
-                    for node, update in event.items():
-                        if node == "__interrupt__" or not isinstance(update, dict):
-                            continue
-                        _merge_observation(observation, update, node)
-                snapshot = await graph.aget_state(config)
-                interrupted = bool(snapshot.interrupts)
-                if not interrupted:
-                    break
-            if interrupted:
-                raise RuntimeError("确认流程超过最大重确认次数")
+            resume = {"confirm": bool(task["resume"])}
+            async for event in graph.astream(Command(resume=resume), config, stream_mode="updates"):
+                for node, update in event.items():
+                    if node == "__interrupt__" or not isinstance(update, dict):
+                        continue
+                    _merge_observation(observation, update, node)
 
         snapshot = await graph.aget_state(config)
         values = snapshot.values or {}
         observation.setdefault("intent", values.get("intent"))
         observation.setdefault("reply", values.get("reply"))
         observation.setdefault("order_status", (values.get("order") or {}).get("status"))
+        observation.setdefault("order_results", values.get("order_results") or [])
+        observation.setdefault("order_summary", values.get("order_summary"))
+        observation.setdefault("order_error", values.get("order_error"))
         recommendation = values.get("recommendation") or {}
         observation.setdefault("recommendation_items", len(recommendation.get("items") or []))
         passed = task_succeeded(task, observation)
@@ -235,6 +357,9 @@ async def _run_task(graph, tools: dict, task: dict) -> dict:
             "observation": observation,
             "reason": f"{type(exc).__name__}: {exc}",
         }
+    finally:
+        if fixture_profile:
+            await _cleanup_order_fixture(fixture_profile)
 
 
 async def run_tasks(repeats: int = 1) -> tuple[list[dict], dict]:
@@ -245,6 +370,7 @@ async def run_tasks(repeats: int = 1) -> tuple[list[dict], dict]:
 
     tasks = json.loads(TASK_SET.read_text(encoding="utf-8"))["tasks"]
     require_order_eval_opt_in(tasks)
+    await init_db()
     graph = build_graph(checkpointer=MemorySaver())
     if repeats < 1:
         raise ValueError("repeats must be at least 1")

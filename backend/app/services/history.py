@@ -1,17 +1,16 @@
-"""会话历史服务：从 LangGraph checkpointer 读回会话（第一档：读最新状态）。
+"""会话历史服务：从 LangGraph checkpointer 读回会话与逐轮卡片。
 
 设计决策：
 - 会话列表以 conversations 表为准（每轮 /chat 都 ensure_conversation 登记，见 chat.py），
   标题/副标题从 checkpointer 的 messages[0] 与 preferences 反推，不额外建表建列；
-- 会话详情读 graph.aget_state 的最新快照：messages 全文 + 最新一轮结构化结果
-  （首档局限：checkpointer 只存最新 recommendation/order，多轮历史卡片不逐轮保留）；
+- 会话详情读 graph.aget_state 的最新快照：messages 全文 + 按 turn_id 追加的卡片历史；
 - langchain Message 对象不可 JSON 序列化，统一折成 {role, content}；
 - HITL 挂起时草稿在 snap.interrupts 载荷里（state 尚未提交 draft_order），需从载荷取回。
 """
 from langchain_core.messages import BaseMessage
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
-from app.db.models import ConversionEvent, Conversation, Order, User
+from app.db.models import Conversation, Order, User
 from app.db.session import async_session_factory
 from app.services import profile
 from app.services.order import require_conversation_owner
@@ -37,6 +36,7 @@ def _serialize_messages(messages) -> list[dict]:
             "role": "user" if m.type == "human" else "assistant",
             "content": _text(m.content),
             "ts": (m.additional_kwargs or {}).get("ts"),
+            "turn_id": (m.additional_kwargs or {}).get("turn_id"),
         })
     return out
 
@@ -103,17 +103,25 @@ async def get_conversation(graph, thread_id: str, profile_id: str) -> dict | Non
         "preferences": values.get("preferences") or {},
         "profile_preferences": current_profile,
         "memory_events": values.get("memory_events") or [],
-        "normalized": values.get("normalized") or [],
         "recommendation": rec,
+        "recommendation_intro": values.get("recommendation_intro") or "",
+        "recommendation_history": values.get("recommendation_history") or [],
         "draft_order": draft,
         "order": values.get("order"),
+        "order_history": values.get("order_history") or [],
+        "order_query_history": values.get("order_query_history") or [],
+        "order_query": values.get("order_query"),
+        "order_results": values.get("order_results") or [],
+        "order_summary": values.get("order_summary"),
+        "order_clarification": values.get("order_clarification"),
+        "order_error": values.get("order_error"),
         "price_raised": bool(values.get("price_raised")),
         "awaiting_hitl": awaiting,
     }
 
 
 async def delete_conversation(graph, thread_id: str, profile_id: str) -> bool:
-    """删除会话：清关联转化事件/订单 → 删会话行 → 删 checkpointer 线程状态。"""
+    """删除会话及其关联历史数据，再清理 checkpointer 线程状态。"""
     async with async_session_factory() as session:
         result = await session.execute(
             select(Conversation)
@@ -128,7 +136,13 @@ async def delete_conversation(graph, thread_id: str, profile_id: str) -> bool:
             return False
         cid = conv.id
         # 无 ondelete cascade，先清子表再删父表，否则外键约束拒绝删除
-        await session.execute(delete(ConversionEvent).where(ConversionEvent.conversation_id == cid))
+        # 兼容旧数据库中的转化事件外键；新数据库不会再创建该表。
+        legacy_events_table = await session.scalar(text("SELECT to_regclass('public.conversion_events')"))
+        if legacy_events_table:
+            await session.execute(
+                text("DELETE FROM public.conversion_events WHERE conversation_id = :conversation_id"),
+                {"conversation_id": cid},
+            )
         await session.execute(delete(Order).where(Order.conversation_id == cid))
         await session.delete(conv)
         await session.commit()

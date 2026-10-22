@@ -1,74 +1,112 @@
 {
+  "description": "完整 Agent 工作流评测集。共 100 条任务，覆盖商品推荐、需求澄清、模拟下单、取消、订单明细查询、消费统计、订单查询澄清和其他请求。订单相关任务会使用隔离评测数据并写入数据库，运行前必须配置隔离评测库并设置 TASK_EVAL_ALLOW_DB_WRITES=1。",
   "tasks": [
-    {
-      "id": "recommend_complete_request",
-      "type": "recommendation",
-      "message": "想买一件男款简约黑色衬衫，预算300元"
-    },
-    {
-      "id": "clarify_then_recommend",
-      "type": "clarification",
-      "messages": [
-        "想买一件男款简约衬衫",
-        "预算300元，黑色，适合通勤"
-      ]
-    },
-    {
-      "id": "cancel_after_confirmation",
-      "type": "cancel",
-      "message": "想买一件男款简约黑色衬衫，预算300元",
-      "resume": false
-    },
-    {
-      "id": "confirm_and_place_order",
-      "type": "order",
-      "message": "想买一件男款简约黑色衬衫，预算300元",
-      "resume": true
-    },
-    {
-      "id": "non_shopping_request",
-      "type": "other",
-      "message": "你好"
-    },
-    {
-      "id": "recommend_womens_sweatshirt",
-      "type": "recommendation",
-      "message": "推荐女款深蓝色运动卫衣，预算400元"
-    },
-    {
-      "id": "recommend_mens_cotton_tshirt",
-      "type": "recommendation",
-      "message": "想买男款纯棉黑色T恤，预算150元"
-    },
-    {
-      "id": "recommend_travel_jacket",
-      "type": "recommendation",
-      "message": "帮我找一件旅行穿的简约外套，预算800元，卡其色"
-    },
-    {
-      "id": "clarify_three_turn_request",
-      "type": "clarification",
-      "messages": [
-        "帮我挑一件衣服",
-        "男款衬衫",
-        "预算500，深蓝色，通勤穿"
-      ]
-    },
-    {
-      "id": "direct_cancel",
-      "type": "cancel",
-      "message": "这轮先不买了"
-    },
-    {
-      "id": "unrelated_question",
-      "type": "other",
-      "message": "你能帮我查一下天气吗"
-    },
-    {
-      "id": "confirm_and_place_order_sweatshirt",
-      "type": "order",
-      "message": "想买一件男款深蓝运动卫衣，预算400元",
-      "resume": true
-    }
+    {"id": "recommend_01_shirt", "type": "recommendation", "message": "想买一件男款简约黑色衬衫，预算300元，通勤穿"},
+    {"id": "recommend_02_sweatshirt", "type": "recommendation", "message": "推荐女款蓝色运动卫衣，预算500元"},
+    {"id": "recommend_03_tshirt", "type": "recommendation", "message": "想买男款纯棉黑色T恤，预算300元，周末穿"},
+    {"id": "recommend_04_outerwear", "type": "recommendation", "message": "想买女款白色简约外套，预算1000元，旅行穿"},
+    {"id": "recommend_05_shoes", "type": "recommendation", "message": "帮我选一双男款蓝色运动鞋，预算600元，周末穿"},
+    {"id": "recommend_06_red_shirt", "type": "recommendation", "message": "想买女款红色衬衫，预算500元，约会穿"},
+    {"id": "recommend_07_white_sweatshirt", "type": "recommendation", "message": "推荐男款白色宽松卫衣，预算500元，日常穿"},
+    {"id": "recommend_08_black_tshirt", "type": "recommendation", "message": "想买女款黑色简约T恤，预算300元，通勤穿"},
+    {"id": "recommend_09_red_sweatshirt", "type": "recommendation", "message": "想买男款红色街头卫衣，预算600元，周末穿"},
+    {"id": "recommend_10_yellow_outerwear", "type": "recommendation", "message": "推荐女款黄色外套，预算1200元，旅行穿"},
+    {"id": "recommend_11_black_shoes", "type": "recommendation", "message": "想买男款黑色真皮鞋，预算700元，通勤穿"},
+    {"id": "recommend_12_blue_tshirt", "type": "recommendation", "message": "帮我挑女款蓝色纯棉T恤，预算300元，运动穿"},
+    {"id": "recommend_13_white_shirt", "type": "recommendation", "message": "想买男款白色亚麻衬衫，预算500元，旅行穿"},
+    {"id": "recommend_14_black_sweatshirt", "type": "recommendation", "message": "推荐女款黑色简约卫衣，预算600元，周末穿"},
+    {"id": "recommend_15_phone", "type": "recommendation", "message": "想买一部拍照手机，预算3000元，优先考虑小米"},
+    {"id": "recommend_16_headphones", "type": "recommendation", "message": "推荐一款游戏用降噪耳机，预算800元"},
+    {"id": "recommend_17_laptop", "type": "recommendation", "message": "想买办公笔记本电脑，预算5000元，轻薄一些"},
+    {"id": "recommend_18_camera", "type": "recommendation", "message": "帮我选一台旅行拍照相机，预算4000元"},
+    {"id": "recommend_19_budget_edge", "type": "recommendation", "message": "帮我找一件预算100元以内的黑色T恤"},
+    {"id": "recommend_20_brand", "type": "recommendation", "message": "想买一副索尼耳机，预算1500元，主要通勤使用"},
+
+    {"id": "clarify_01_category", "type": "clarification", "messages": ["想买件衣服", "男款黑色T恤，预算300元，周末穿"]},
+    {"id": "clarify_02_budget", "type": "clarification", "messages": ["想买一件衬衫", "女款白色衬衫，预算500元，通勤穿"]},
+    {"id": "clarify_03_split_budget", "type": "clarification", "messages": ["预算500元左右", "男款蓝色运动卫衣，日常穿"]},
+    {"id": "clarify_04_shoes", "type": "clarification", "messages": ["想买一双鞋", "女款红色运动鞋，预算600元，周末穿"]},
+    {"id": "clarify_05_outerwear", "type": "clarification", "messages": ["想买男款黑色外套", "预算1000元，简约风，旅行穿"]},
+    {"id": "clarify_06_partial", "type": "clarification", "messages": ["预算300元，想买女款衣服", "白色简约T恤，周末穿"]},
+    {"id": "clarify_07_three_turn_shirt", "type": "clarification", "messages": ["帮我挑一件衣服", "男款衬衫", "预算500元，白色，通勤穿"]},
+    {"id": "clarify_08_three_turn_shoes", "type": "clarification", "messages": ["买双鞋", "女款黑色鞋", "预算500元，周末穿"]},
+    {"id": "clarify_09_three_turn_outerwear", "type": "clarification", "messages": ["预算800元", "女款黄色外套", "通勤穿，简约风"]},
+    {"id": "clarify_10_three_turn_tshirt", "type": "clarification", "messages": ["想给自己买一件衣服", "男款红色T恤", "预算300元，周末穿"]},
+    {"id": "clarify_11_style_only", "type": "clarification", "messages": ["想要一件宽松卫衣", "女款黑色，预算600元，日常穿"]},
+    {"id": "clarify_12_gender_only", "type": "clarification", "messages": ["给男生买衣服", "白色亚麻衬衫，预算500元，旅行穿"]},
+    {"id": "clarify_13_phone", "type": "clarification", "messages": ["预算3000元，想换手机", "主要拍照，最好是小米手机"]},
+    {"id": "clarify_14_headphones", "type": "clarification", "messages": ["想买耳机", "预算800元，主要打游戏"]},
+    {"id": "clarify_15_laptop", "type": "clarification", "messages": ["预算5000元", "想买一台办公用的笔记本"]},
+    {"id": "clarify_16_category_switch", "type": "clarification", "messages": ["想买一副耳机，预算300元", "改买手机，预算3000元，主要拍照"]},
+    {"id": "clarify_17_short_budget", "type": "clarification", "messages": ["想买一件T恤", "100"]},
+    {"id": "clarify_18_short_category", "type": "clarification", "messages": ["预算1500元", "耳机"]},
+    {"id": "clarify_19_requirements", "type": "clarification", "messages": ["帮我买件衣服", "通勤穿，预算500元，要透气显瘦的衬衫"]},
+    {"id": "clarify_20_fourth_turn_cap", "type": "clarification", "messages": ["帮我买东西", "衣服", "男款黑色", "预算300元"]},
+
+    {"id": "order_01_shirt", "type": "order", "message": "想买一件男款简约黑色衬衫，预算300元，通勤穿", "resume": true},
+    {"id": "order_02_sweatshirt", "type": "order", "message": "想买一件女款蓝色运动卫衣，预算500元", "resume": true},
+    {"id": "order_03_tshirt", "type": "order", "message": "想买男款白色纯棉T恤，预算300元，周末穿", "resume": true},
+    {"id": "order_04_outerwear", "type": "order", "message": "想买女款黑色简约外套，预算1200元，旅行穿", "resume": true},
+    {"id": "order_05_shoes", "type": "order", "message": "想买男款蓝色运动鞋，预算700元，周末穿", "resume": true},
+    {"id": "order_06_red_shirt", "type": "order", "message": "想买女款红色衬衫，预算500元，约会穿", "resume": true},
+    {"id": "order_07_sweatshirt", "type": "order", "message": "想买男款黑色街头卫衣，预算600元，周末穿", "resume": true},
+    {"id": "order_08_white_tshirt", "type": "order", "message": "想买女款白色简约T恤，预算300元，通勤穿", "resume": true},
+    {"id": "order_09_phone", "type": "order", "message": "想买一部拍照手机，预算3000元", "resume": true},
+    {"id": "order_10_headphones", "type": "order", "message": "推荐一款游戏耳机，预算800元", "resume": true},
+    {"id": "order_11_laptop", "type": "order", "message": "想买办公笔记本电脑，预算5000元", "resume": true},
+    {"id": "order_12_camera", "type": "order", "message": "帮我选一台旅行相机，预算4000元", "resume": true},
+
+    {"id": "cancel_01_after_shirt", "type": "cancel", "message": "想买一件男款简约黑色衬衫，预算300元，通勤穿", "resume": false},
+    {"id": "cancel_02_after_sweatshirt", "type": "cancel", "message": "想买女款蓝色运动卫衣，预算500元", "resume": false},
+    {"id": "cancel_03_after_tshirt", "type": "cancel", "message": "想买男款白色纯棉T恤，预算300元，周末穿", "resume": false},
+    {"id": "cancel_04_after_shoes", "type": "cancel", "message": "想买女款黑色运动鞋，预算600元，周末穿", "resume": false},
+    {"id": "cancel_05_direct", "type": "cancel", "message": "这轮先不买了"},
+    {"id": "cancel_06_end_guidance", "type": "cancel", "message": "结束本轮导购"},
+    {"id": "cancel_07_not_needed", "type": "cancel", "message": "暂时不需要了"},
+    {"id": "cancel_08_stop_shopping", "type": "cancel", "message": "取消当前购物流程"},
+
+    {"id": "search_01_yesterday_all", "type": "order_search", "message": "昨天我买了什么", "fixture": "yesterday_mixed", "expected_count": 2},
+    {"id": "search_02_yesterday_headphones", "type": "order_search", "message": "昨天买了耳机", "fixture": "yesterday_mixed", "expected_count": 1},
+    {"id": "search_03_yesterday_jd", "type": "order_search", "message": "昨天在京东买了什么", "fixture": "yesterday_mixed", "expected_count": 1},
+    {"id": "search_04_recent_headphones", "type": "order_search", "message": "最近30天买了耳机", "fixture": "recent_headphones", "expected_count": 2},
+    {"id": "search_05_recent_shirt", "type": "order_search", "message": "最近30天买了衬衫", "fixture": "recent_headphones", "expected_count": 0},
+    {"id": "search_06_this_week", "type": "order_search", "message": "本周买了什么", "fixture": "platform_split", "expected_count": 3},
+    {"id": "search_07_last_week", "type": "order_search", "message": "上周买了什么", "fixture": "platform_split", "expected_count": 0},
+    {"id": "search_08_platform", "type": "order_search", "message": "最近30天在淘宝买了什么", "fixture": "platform_split", "expected_count": 1},
+    {"id": "search_09_category", "type": "order_search", "message": "最近30天买了耳机", "fixture": "category_split", "expected_count": 1},
+    {"id": "search_10_empty", "type": "order_search", "message": "最近7天买了什么", "fixture": "empty", "expected_count": 0},
+    {"id": "search_11_two_days", "type": "order_search", "message": "这两天都买了些什么东西", "fixture": "yesterday_mixed", "expected_count": 2},
+    {"id": "search_12_current_year", "type": "order_search", "message": "今年在京东买了什么", "fixture": "category_split", "expected_count": 2},
+
+    {"id": "summary_01_recent_all", "type": "order_summary", "message": "最近30天花了多少钱", "fixture": "recent_headphones", "expected_summary": {"order_count": 2, "total_amount": 399.0, "average_order_amount": 199.5}},
+    {"id": "summary_02_recent_headphones", "type": "order_summary", "message": "最近30天买耳机花了多少钱", "fixture": "recent_headphones", "expected_summary": {"order_count": 2, "total_amount": 399.0, "average_order_amount": 199.5}},
+    {"id": "summary_03_yesterday", "type": "order_summary", "message": "昨天买了几单", "fixture": "yesterday_mixed", "expected_summary": {"order_count": 2, "total_amount": 338.0, "average_order_amount": 169.0}},
+    {"id": "summary_04_platform", "type": "order_summary", "message": "最近30天按平台统计消费", "fixture": "platform_split", "expected_summary": {"order_count": 3, "total_amount": 349.0, "average_order_amount": 116.33}},
+    {"id": "summary_05_category", "type": "order_summary", "message": "最近30天按品类统计", "fixture": "category_split", "expected_summary": {"order_count": 3, "total_amount": 999.0, "average_order_amount": 333.0}},
+    {"id": "summary_06_jd", "type": "order_summary", "message": "最近30天在京东花了多少钱", "fixture": "platform_split", "expected_summary": {"order_count": 2, "total_amount": 299.0, "average_order_amount": 149.5}},
+    {"id": "summary_07_category_filter", "type": "order_summary", "message": "最近30天买耳机平均每单多少钱", "fixture": "category_split", "expected_summary": {"order_count": 1, "total_amount": 299.0, "average_order_amount": 299.0}},
+    {"id": "summary_08_empty", "type": "order_summary", "message": "最近7天花了多少钱", "fixture": "empty", "expected_summary": {"order_count": 0, "total_amount": 0.0, "average_order_amount": 0.0}},
+    {"id": "summary_09_this_week", "type": "order_summary", "message": "本周买了几单", "fixture": "platform_split", "expected_summary": {"order_count": 3, "total_amount": 349.0, "average_order_amount": 116.33}},
+    {"id": "summary_10_last_week", "type": "order_summary", "message": "上周花了多少钱", "fixture": "platform_split", "expected_summary": {"order_count": 0, "total_amount": 0.0, "average_order_amount": 0.0}},
+    {"id": "summary_11_taobao", "type": "order_summary", "message": "最近30天在淘宝买东西花了多少钱", "fixture": "platform_split", "expected_summary": {"order_count": 1, "total_amount": 50.0, "average_order_amount": 50.0}},
+    {"id": "summary_12_group_platform", "type": "order_summary", "message": "最近30天按平台统计买了几单", "fixture": "category_split", "expected_summary": {"order_count": 3, "total_amount": 999.0, "average_order_amount": 333.0}},
+
+    {"id": "order_clarify_01_missing_time", "type": "order_clarification", "messages": ["我买了什么", "昨天买了什么"], "fixture": "yesterday_mixed", "expected_terminal": "order_search", "expected_count": 2},
+    {"id": "order_clarify_02_summary_time", "type": "order_clarification", "messages": ["我花了多少钱", "最近30天花了多少钱"], "fixture": "recent_headphones", "expected_terminal": "order_summary", "expected_summary": {"order_count": 2, "total_amount": 399.0, "average_order_amount": 199.5}},
+    {"id": "order_clarify_03_missing_time_keyword", "type": "order_clarification", "messages": ["我买过耳机吗", "最近30天买了耳机"], "fixture": "recent_headphones", "expected_terminal": "order_search", "expected_count": 2},
+    {"id": "order_clarify_04_missing_time_platform", "type": "order_clarification", "messages": ["我在京东买了什么", "最近30天在京东买了什么"], "fixture": "platform_split", "expected_terminal": "order_search", "expected_count": 2},
+    {"id": "order_clarify_05_missing_time_category", "type": "order_clarification", "messages": ["我买过哪些鞋", "最近30天买了鞋"], "fixture": "empty", "expected_terminal": "order_search", "expected_count": 0},
+    {"id": "order_clarify_06_summary_group", "type": "order_clarification", "messages": ["按品类统计我花了多少钱", "最近30天按品类统计"], "fixture": "category_split", "expected_terminal": "order_summary", "expected_summary": {"order_count": 3, "total_amount": 999.0, "average_order_amount": 333.0}},
+
+    {"id": "other_01_greeting", "type": "other", "message": "你好"},
+    {"id": "other_02_weather", "type": "other", "message": "你能帮我查一下天气吗"},
+    {"id": "other_03_cooking", "type": "other", "message": "你会做菜吗"},
+    {"id": "other_04_identity", "type": "other", "message": "你能做什么"},
+    {"id": "other_05_news", "type": "other", "message": "今天有什么新闻"},
+    {"id": "other_06_translation", "type": "other", "message": "帮我翻译一句英文"},
+    {"id": "other_07_math", "type": "other", "message": "1加1等于几"},
+    {"id": "other_08_voice", "type": "other", "message": "你支持语音聊天吗"},
+    {"id": "other_09_delivery", "type": "other", "message": "帮我查快递物流"},
+    {"id": "other_10_recipe", "type": "other", "message": "帮我写一份旅行攻略"}
   ]
 }

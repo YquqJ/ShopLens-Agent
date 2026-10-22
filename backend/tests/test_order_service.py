@@ -1,0 +1,156 @@
+from types import SimpleNamespace
+
+import pytest
+
+from app.agents.nodes import place_order
+from app.services import order as order_service
+
+
+class _Session:
+    def __init__(self, *, scalar_values=None, execute_value=None):
+        self.scalar_values = list(scalar_values or [])
+        self.execute_value = execute_value
+        self.added = []
+        self.committed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def scalar(self, _statement):
+        return self.scalar_values.pop(0) if self.scalar_values else None
+
+    async def execute(self, _statement):
+        return self.execute_value
+
+    def add(self, value):
+        self.added.append(value)
+
+    async def flush(self):
+        if self.added and getattr(self.added[-1], "id", None) is None:
+            self.added[-1].id = 42
+
+    async def commit(self):
+        self.committed = True
+
+    async def refresh(self, _value):
+        return None
+
+
+class _Factory:
+    def __init__(self, *sessions):
+        self.sessions = list(sessions)
+
+    def __call__(self):
+        return self.sessions.pop(0)
+
+
+@pytest.mark.anyio
+async def test_place_order_persists_intent_and_product_snapshot(monkeypatch):
+    user = SimpleNamespace(id=7, external_id="profile-1")
+    conversation = SimpleNamespace(id=8, user_id=7)
+    setup_session = _Session(
+        scalar_values=[user],
+        execute_value=SimpleNamespace(scalar_one_or_none=lambda: conversation),
+    )
+    order_session = _Session()
+    monkeypatch.setattr(
+        order_service,
+        "async_session_factory",
+        _Factory(setup_session, order_session),
+    )
+
+    result = await order_service.place_order(
+        {
+            "sku_id": "SKU1",
+            "title": "黑色外套",
+            "url": "https://mall.example/item",
+            "image_url": "https://img.example/item.jpg",
+            "catalog_price": 399,
+            "price": 299,
+            "shipping_fee": 0,
+            "final_price": 299,
+            "platform": "jd",
+        },
+        "thread-1",
+        "profile-1",
+        order_intent_id="intent-1",
+    )
+
+    assert result["status"] == "placed"
+    assert result["order_intent_id"] == "intent-1"
+    assert result["order_number"]
+    assert order_session.added[0].title_snapshot == "黑色外套"
+    assert order_session.added[0].source_url == "https://mall.example/item"
+    assert order_session.added[0].image_url_snapshot == "https://img.example/item.jpg"
+    assert order_session.added[0].order_intent_id == "intent-1"
+
+
+@pytest.mark.anyio
+async def test_place_order_is_idempotent_for_same_intent(monkeypatch):
+    user = SimpleNamespace(id=7, external_id="profile-1")
+    existing = SimpleNamespace(
+        id=99,
+        conversation_id=8,
+        sku_id="SKU1",
+        platform="jd",
+        final_price=299,
+        status="placed",
+        order_intent_id="intent-1",
+    )
+    conversation = SimpleNamespace(id=8, user_id=7)
+    setup_session = _Session(
+        scalar_values=[user],
+        execute_value=SimpleNamespace(scalar_one_or_none=lambda: conversation),
+    )
+    order_session = _Session(scalar_values=[existing])
+    monkeypatch.setattr(order_service, "async_session_factory", _Factory(setup_session, order_session))
+
+    result = await order_service.place_order(
+        {"sku_id": "SKU1", "title": "黑色外套", "price": 299, "final_price": 299, "platform": "jd"},
+        "thread-1",
+        "profile-1",
+        order_intent_id="intent-1",
+    )
+
+    assert result["order_id"] == 99
+    assert result["status"] == "placed"
+    assert order_session.added == []
+
+
+@pytest.mark.anyio
+async def test_place_order_node_appends_order_history_for_current_turn(monkeypatch):
+    placed = {"status": "placed", "order_id": 42, "final_price": 299}
+
+    async def fake_place_order(*_args, **_kwargs):
+        return placed
+
+    monkeypatch.setattr(place_order.order_service, "place_order", fake_place_order)
+
+    result = await place_order.place_order_node(
+        {
+            "turn_id": "turn-1",
+            "draft_order": {"title": "黑色外套", "final_price": 299, "platform": "jd", "sku_id": "SKU1"},
+            "recommendation": {"items": [{"sku_id": "SKU1"}]},
+            "order_history": [],
+        },
+        {"configurable": {"thread_id": "thread-1", "profile_id": "profile-1"}},
+    )
+
+    assert result["order_history"] == [{"turn_id": "turn-1", "order": placed}]
+    assert "messages" not in result
+
+
+def test_order_number_uses_minute_timestamp_and_three_random_digits(monkeypatch):
+    class _Clock:
+        @classmethod
+        def now(cls, _tz=None):
+            from datetime import datetime
+            return datetime(2026, 10, 19, 21, 12, tzinfo=_tz)
+
+    monkeypatch.setattr(order_service, "datetime", _Clock)
+    monkeypatch.setattr(order_service.secrets, "randbelow", lambda _limit: 678)
+
+    assert order_service._new_order_number() == "202610192112678"

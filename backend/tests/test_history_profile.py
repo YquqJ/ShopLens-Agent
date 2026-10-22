@@ -36,6 +36,28 @@ class EmptyRecommendationGraph:
         )
 
 
+class HistoryGraph:
+    async def aget_state(self, _config: dict) -> SimpleNamespace:
+        from langchain_core.messages import HumanMessage
+
+        return SimpleNamespace(
+            values={
+                "messages": [HumanMessage("买手机", additional_kwargs={"ts": 1, "turn_id": "turn-1"})],
+                "recommendation": {"summary": "最新", "items": [{"sku_id": "new"}]},
+                "order": {"status": "placed", "order_id": 2},
+                "recommendation_history": [
+                    {
+                        "turn_id": "turn-1",
+                        "intro": "根据您的需求，为你推荐1款候选",
+                        "recommendation": {"summary": "历史", "items": [{"sku_id": "old"}]},
+                    }
+                ],
+                "order_history": [{"turn_id": "turn-1", "order": {"status": "placed", "order_id": 1}}],
+            },
+            interrupts=[],
+        )
+
+
 @pytest.mark.anyio
 async def test_history_detail_uses_current_browser_profile_over_thread_snapshot(monkeypatch) -> None:
     get_preferences = AsyncMock(return_value={"preferred_colors": ["黑色"]})
@@ -84,6 +106,19 @@ async def test_history_detail_does_not_restore_empty_recommendation_as_a_message
     )
 
     assert detail["recommendation"] is None
+
+
+@pytest.mark.anyio
+async def test_history_detail_serializes_turn_id_and_card_histories(monkeypatch) -> None:
+    monkeypatch.setattr(history, "require_conversation_owner", AsyncMock(return_value=1))
+    monkeypatch.setattr(history.profile, "get_preferences", AsyncMock(return_value={}))
+
+    detail = await history.get_conversation(HistoryGraph(), "thread-history", "profile-1")
+
+    assert detail["messages"][0]["turn_id"] == "turn-1"
+    assert detail["recommendation_history"][0]["turn_id"] == "turn-1"
+    assert detail["recommendation_history"][0]["intro"] == "根据您的需求，为你推荐1款候选"
+    assert detail["order_history"][0]["order"]["order_id"] == 1
 
 
 @pytest.fixture

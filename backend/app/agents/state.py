@@ -3,17 +3,19 @@
 字段职责：
 - messages：对话全量（add reducer 累加），澄清反问/推荐语都往里写；
 - preferences：clarify 提取的结构化偏好（品类/预算/风格/材质/场景）；
-- candidates → quotes → normalized → recommendation：链路产物，逐步传递；
-- draft_order / order：M4 下单闭环用，M3 先占位；
+- candidates → product_evidence → comparison → recommendation：真实商品事实链路产物；
+- draft_order / order：确认式模拟下单闭环；
 - hop_count：多轮澄清次数，防死循环用。
 """
 import operator
 import time
+import uuid
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import HumanMessage
 
 _RESET_SESSION_PREFERENCES = "__reset_session_preferences__"
+_CLEAR_PREFERENCE_FIELDS = "__clear_preference_fields__"
 
 
 def merge_preferences(a: dict, b: dict) -> dict:
@@ -22,11 +24,14 @@ def merge_preferences(a: dict, b: dict) -> dict:
         return {
             key: value
             for key, value in b.items()
-            if key != _RESET_SESSION_PREFERENCES and value not in (None, "", [])
+            if key not in {_RESET_SESSION_PREFERENCES, _CLEAR_PREFERENCE_FIELDS}
+            and value not in (None, "", [])
         }
     merged = dict(a or {})
+    for key in b.get(_CLEAR_PREFERENCE_FIELDS, []):
+        merged.pop(key, None)
     for k, v in (b or {}).items():
-        if v not in (None, "", []):
+        if k not in {_RESET_SESSION_PREFERENCES, _CLEAR_PREFERENCE_FIELDS} and v not in (None, "", []):
             merged[k] = v
     return merged
 
@@ -44,20 +49,32 @@ def should_reset_session(state: dict) -> bool:
 
 class AgentState(TypedDict):
     messages: Annotated[list[Any], operator.add]
-    preferences: Annotated[dict, merge_preferences]   # 跨轮累积（reducer 合并非空字段）
-    profile_preferences: dict  # 用户授权的跨会话长期偏好（不混入本轮 preferences）
-    memory_events: Annotated[list[dict], operator.add]  # trace-safe 记忆读取/写入事件
-    intent: str          # "shopping" | "memory" | "other"
+    turn_id: str
+    recommendation_history: Annotated[list[dict], operator.add]
+    order_history: Annotated[list[dict], operator.add]
+    order_query_history: Annotated[list[dict], operator.add]
+    order_query: dict | None
+    order_results: list[dict]
+    order_summary: dict | None
+    order_clarification: str | None
+    order_error: str | None
+    preferences: Annotated[dict, merge_preferences]   # 当前会话跨轮累积（reducer 合并非空字段）
+    optional_clarify_asked: bool  # 类目专属补充问题最多询问一次
+    profile_preferences: dict  # 兼容历史 checkpoint，当前购物链路不读取
+    memory_events: Annotated[list[dict], operator.add]  # 兼容历史 checkpoint
+    intent: str          # "shopping" | "order_search" | "order_summary" | "other"
     needs_action: str          # "" | "clarify" | "shopping"
     clarify_question: str      # M8：澄清问句（独立序列化字段，供前端透出；messages 不含）
     trace_preferences: dict     # 当前澄清轮合并后的偏好，仅供 Trace 展示
     reply: str                 # M8：route 非导购兜底回复（独立序列化字段）
     candidates: list[dict]
-    zdm_mode: bool             # 方案 B：真实源（值海纳）模式，检索后直连推荐，跳过比价/下单闭环
-    quotes: list[dict]
-    normalized: list[dict]
-    degraded_sources: list[str]   # M6：本次比价中熔断/失败的平台（"暂不可比"，供推荐透出）
+    product_evidence: dict[str, list[dict]]
+    comparison: dict
+    order_intent_id: str | None
+    zdm_mode: bool             # 值得买真实源模式
+    degraded_sources: list[str]
     recommendation: dict
+    recommendation_intro: str
     draft_order: dict | None
     order: dict | None
     lock_attempts: int   # 下单前二次询价「涨价」重确认次数
@@ -66,12 +83,28 @@ class AgentState(TypedDict):
     session_reset_pending: bool  # 真实源选择完成后，下一轮清空临时偏好
 
 
-def initial_state(message: str, *, reset_preferences: bool = False) -> AgentState:
+def initial_state(
+    message: str,
+    *,
+    reset_preferences: bool = False,
+    optional_clarify_asked: bool = False,
+) -> AgentState:
     """构造初始状态（首轮用户消息 + 各字段默认值）。"""
+    turn_id = str(uuid.uuid4())
     return {
-        "messages": [HumanMessage(message, additional_kwargs={"ts": time.time()})],
+        "messages": [HumanMessage(message, additional_kwargs={"ts": time.time(), "turn_id": turn_id})],
+        "turn_id": turn_id,
+        "recommendation_history": [],
+        "order_history": [],
+        "order_query_history": [],
+        "order_query": None,
+        "order_results": [],
+        "order_summary": None,
+        "order_clarification": None,
+        "order_error": None,
         "preferences": {_RESET_SESSION_PREFERENCES: True} if reset_preferences else {},
-        "profile_preferences": {},
+        "optional_clarify_asked": optional_clarify_asked,
+        "profile_preferences": {},  # 兼容历史 checkpoint，当前链路不读取
         "memory_events": [],
         "intent": "",
         "needs_action": "",
@@ -79,11 +112,13 @@ def initial_state(message: str, *, reset_preferences: bool = False) -> AgentStat
         "trace_preferences": {},
         "reply": "",
         "candidates": [],
+        "product_evidence": {},
+        "comparison": {},
+        "order_intent_id": None,
         "zdm_mode": False,
-        "quotes": [],
-        "normalized": [],
         "degraded_sources": [],
         "recommendation": {},
+        "recommendation_intro": "",
         "draft_order": None,
         "order": None,
         "lock_attempts": 0,

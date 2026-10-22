@@ -7,10 +7,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.graph import build_graph
 from app.api.chat import router as chat_router
-from app.api.conversion import router as conversion_router
-from app.api.debug import router as debug_router
 from app.api.history import router as history_router
 from app.api.profile import router as profile_router
+from app.api.orders import router as orders_router
 from app.core.config import settings
 from app.db.session import init_db
 from app.infra.observability import setup_tracer
@@ -43,10 +42,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(chat_router, prefix="/api")
-app.include_router(conversion_router, prefix="/api")
-app.include_router(debug_router, prefix="/api")
 app.include_router(history_router, prefix="/api")
 app.include_router(profile_router, prefix="/api")
+app.include_router(orders_router, prefix="/api")
 
 # 前端 Vite 开发服务器跨域（生产由 docker-compose 反代，同源无需放宽）
 app.add_middleware(

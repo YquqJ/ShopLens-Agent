@@ -3,11 +3,8 @@
 设计决策：
 - 用 BaseSettings 集中管理配置并做类型校验，避免 os.getenv 散读；
 - DATABASE_URL 默认指向 docker-compose 起的本地 Postgres；
-- CHROMA_DIR 控制向量持久化目录，相对路径统一相对 backend 根解析，
-  保证无论从哪里启动（backend/ 或项目根）落盘位置一致。
 """
 from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/ 根目录：本文件位于 backend/app/core/config.py，向上两级
@@ -31,14 +28,8 @@ class Settings(BaseSettings):
     # Postgres 异步连接串（psycopg）
     DATABASE_URL: str = "postgresql+psycopg://shoplens:shoplens@localhost:5432/shoplens"
 
-    # Chroma 向量持久化目录（本地文件，无独立容器）
-    CHROMA_DIR: str = "chroma"
-
-    # 值得买海纳开放平台 apikey（真实商品检索源，方案 B：可开关，非核心比价路径）
+    # 值得买海纳开放平台 apikey（官方 Streamable HTTP MCP 真实商品检索源）
     ZDM_API_KEY: str = ""
-
-    # 是否启用真实商品检索源；置 1 后检索层直连海纳，跳过比价/下单闭环
-    SHOPLENS_ZHIDEMAI_ENABLED: bool = False
 
     # Langfuse 可选观测（默认关闭；不影响本地离线运行）
     LANGFUSE_ENABLED: bool = False
@@ -48,12 +39,6 @@ class Settings(BaseSettings):
     LANGFUSE_TRACING_ENVIRONMENT: str = "development"
     LANGFUSE_RELEASE: str = ""
     LANGFUSE_SAMPLE_RATE: float = 1.0
-
-    @property
-    def chroma_path(self) -> Path:
-        """CHROMA_DIR 相对 backend 根解析为绝对路径。"""
-        p = Path(self.CHROMA_DIR)
-        return p if p.is_absolute() else BASE_DIR / p
 
     @property
     def postgres_dsn(self) -> str:

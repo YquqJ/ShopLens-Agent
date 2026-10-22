@@ -1,1 +1,1 @@
-"""数据库层：PostgreSQL 关系库（SQLAlchemy）+ Chroma 向量库。"""
+"""数据库层：PostgreSQL 关系库（SQLAlchemy）。"""

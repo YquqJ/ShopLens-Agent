@@ -23,7 +23,7 @@ def _initial(message: str) -> dict:
     return {
         "messages": [HumanMessage(message)],
         "preferences": {}, "intent": "", "needs_action": "",
-        "candidates": [], "quotes": [], "normalized": [], "recommendation": {},
+        "candidates": [], "recommendation": {},
         "draft_order": None, "order": None,
         "lock_attempts": 0, "price_raised": False, "hop_count": 0,
     }

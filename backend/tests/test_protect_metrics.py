@@ -6,7 +6,7 @@ from app.infra.protect import SourceRegistry
 
 
 class FlakyTool:
-    name = "price_jd_get_quote"
+    name = "haina_product_search_pro"
 
     def __init__(self, failures: int):
         self.failures = failures
@@ -15,7 +15,7 @@ class FlakyTool:
     async def ainvoke(self, *args, **kwargs):
         self.calls += 1
         if self.calls <= self.failures:
-            raise RuntimeError("temporary source error")
+            raise ConnectionError("temporary source error")
         return {"price": 10}
 
 
@@ -28,7 +28,7 @@ def test_registry_reports_retry_recovery_and_attempt_counts() -> None:
 
     result = asyncio.run(tool.ainvoke({"sku_id": "SKU1"}))
 
-    metric = registry.tool_metrics_report()["jd"]
+    metric = registry.tool_metrics_report()["haina_product"]
     assert result == {"price": 10}
     assert metric["logical_calls"] == 1
     assert metric["attempts"] == 2
@@ -51,7 +51,7 @@ def test_registry_reports_open_circuit_skips_without_calling_source() -> None:
     with pytest.raises(Exception):
         asyncio.run(tool.ainvoke({"sku_id": "SKU1"}))
 
-    metric = registry.tool_metrics_report()["jd"]
+    metric = registry.tool_metrics_report()["haina_product"]
     assert inner.calls == 1
     assert metric["logical_calls"] == 2
     assert metric["circuit_open_skips"] == 1
@@ -68,7 +68,7 @@ def test_registry_reports_retry_exhaustion_separately_from_recovery() -> None:
     with pytest.raises(Exception):
         asyncio.run(tool.ainvoke({"sku_id": "SKU1"}))
 
-    metric = registry.tool_metrics_report()["jd"]
+    metric = registry.tool_metrics_report()["haina_product"]
     assert metric["attempts"] == 2
     assert metric["retries"] == 1
     assert metric["retry_failed_calls"] == 1
@@ -115,3 +115,17 @@ def test_half_open_probe_failure_reopens_breaker(monkeypatch) -> None:
 
     assert breaker.state.value == "open"
     assert breaker.transition_counts["half_open_to_open"] == 1
+
+
+def test_haina_product_tools_use_product_breaker() -> None:
+    class _Tool:
+        def __init__(self, name, description):
+            self.name = name
+            self.description = description
+
+    registry = SourceRegistry()
+    tools = registry.protect({
+        "haina_product_search_pro": _Tool("haina_product_search_pro", "Search products"),
+    })
+
+    assert tools["haina_product_search_pro"].source == "haina_product"

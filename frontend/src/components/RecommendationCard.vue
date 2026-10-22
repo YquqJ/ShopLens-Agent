@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import type { Turn } from '../stores/chat'
-import type { NormalizedItem, Quote, RecommendItem } from '../api/types'
+import type { PriceInsight, RecommendItem } from '../api/types'
+import OrderCard from './OrderCard.vue'
 
 const props = defineProps<{ turn: Turn }>()
 const store = useChatStore()
@@ -10,15 +11,26 @@ const store = useChatStore()
 const rec = computed(() => props.turn.recommendation!)
 
 // 平台展示样式（京东/淘宝/拼多多/主库兜底）
-const PLATFORM: Record<string, { short: string; bg: string; name: string }> = {
-  jd: { short: '京', bg: '#E1251B', name: '京东' },
-  taobao: { short: '淘', bg: '#FF6F00', name: '淘宝' },
-  pdd: { short: '拼', bg: '#E02E24', name: '拼多多' },
+const PLATFORM: Record<string, { short: string; bg: string; name: string; logo?: string }> = {
+  jd: { short: '京', bg: '#E1251B', name: '京东', logo: '/platforms/jd.png' },
+  taobao: { short: '淘', bg: '#FF6F00', name: '淘宝', logo: '/platforms/tb.png' },
+  pdd: { short: '拼', bg: '#E02E24', name: '拼多多', logo: '/platforms/pdd.png' },
   master: { short: '主', bg: '#44403C', name: '主库兜底' },
 }
 
+const PLATFORM_ALIASES: Record<string, string> = {
+  '京东': 'jd',
+  '淘宝': 'taobao',
+  '天猫': 'taobao',
+  '天猫精选': 'taobao',
+  '淘宝精选': 'taobao',
+  '拼多多': 'pdd',
+}
+
 function plat(p: string) {
-  return PLATFORM[p] ?? { short: p.slice(0, 1).toUpperCase(), bg: '#44403C', name: p }
+  const name = p?.trim() ?? ''
+  const key = PLATFORM_ALIASES[name] ?? name.toLowerCase()
+  return PLATFORM[key] ?? { short: name.slice(0, 1).toUpperCase() || '店', bg: '#44403C', name: name || '未知平台' }
 }
 function platName(p: string) {
   return plat(p).name
@@ -29,78 +41,48 @@ function fmt(v: number | undefined | null): string {
   return `¥${Number.isInteger(v) ? v : v.toFixed(2)}`
 }
 
-// 归一结果按 sku_id 索引，取 best 报价 + 三源 quotes（比价表 / 原价划线用）
-const bySku = computed<Record<string, NormalizedItem>>(() => {
-  const m: Record<string, NormalizedItem> = {}
-  for (const n of props.turn.normalized) m[n.sku_id] = n
-  return m
-})
-
-const degradedList = computed(() => props.turn.degradedSources)
-
-// HITL 候选选择：默认不选中——最推荐那条只打「推荐」标记，用户点卡片才算「点击查看」并选中
+// HITL 候选选择：用户点卡片后才允许确认下单
 const selectedSkuId = ref('')
 const selectedPlatform = ref('')
-const realActionPending = ref(false)
 const selectedItem = computed(() => rec.value.items.find((i) => i.sku_id === selectedSkuId.value))
-// 比价表/理由区展示对象：点选哪个候选就跟到哪个，未选中默认回落到推荐品 item[0]
-const activeItem = computed(() => selectedItem.value ?? rec.value.items[0])
-const activeNormalized = computed(() => (activeItem.value ? bySku.value[activeItem.value.sku_id] : undefined))
-const selectedQuotes = computed<Quote[]>(() => bySku.value[selectedSkuId.value]?.quotes ?? [])
-const selectedBest = computed(() => bySku.value[selectedSkuId.value]?.best?.platform ?? '')
-const selectedQuote = computed<Quote | null>(
-  () => selectedQuotes.value.find((q) => q.platform === selectedPlatform.value) ?? selectedQuotes.value[0] ?? null,
-)
-const isRealSource = computed(() => rec.value.items.some((item) => Boolean(item.url)))
+const bestItem = computed(() => rec.value.items.find((item) => item.sku_id === rec.value.best_sku_id))
+const selectionDisabled = computed(() => ['placed', 'cancelled'].includes(props.turn.order?.status ?? ''))
 
-function openExternal(url: string): void {
-  try {
-    const target = new URL(url)
-    if (target.protocol !== 'http:' && target.protocol !== 'https:') return
-    window.open(target.toString(), '_blank', 'noopener,noreferrer')
-  } catch {
-    // 外链格式异常时不打开窗口，仍保留当前推荐卡片。
+function candidateLabel(item: RecommendItem): string {
+  const index = rec.value.items.findIndex((candidate) => candidate.sku_id === item.sku_id)
+  return `#${index + 1}`
+}
+
+function priceInsightText(insight: PriceInsight): string {
+  const item = rec.value.items.find((candidate) => candidate.sku_id === insight.sku_id)
+  const label = item ? candidateLabel(item) : insight.sku_id
+  const current = fmt(insight.current_price)
+  const reference = fmt(insight.reference_price)
+
+  if (insight.assessment === 'wait') {
+    return `${label}：当前价 ${current}，高于常卖价 ${reference}，当前价格不占优，可以等等再入手。`
   }
+  return `${label}：当前价 ${current}，低于常卖价 ${reference}，当前价格较低，可以直接入手。`
+}
+
+function displayDecisionText(text: string): string {
+  return rec.value.items.reduce(
+    (display, item, index) => display.replaceAll(item.sku_id, `#${index + 1}`),
+    text,
+  )
 }
 
 function selectSku(item: RecommendItem): void {
-  if (isRealSource.value) {
-    selectedSkuId.value = item.sku_id
-    store.trackClick(item.sku_id, props.turn.id)
-    return
-  }
+  if (selectionDisabled.value) return
   const skuId = item.sku_id
-  // 点卡片 = 选中候选：平台回落到该商品最优解 + 记录点击（同一轮同 SKU 只记一次）
+  // 点卡片 = 选中候选：平台回落到该商品最优解。
   if (selectedSkuId.value === skuId) return
   selectedSkuId.value = skuId
-  selectedPlatform.value = selectedBest.value
-  store.trackClick(skuId, props.turn.id)
+  selectedPlatform.value = item.platform
 }
 
 function hasImage(item: RecommendItem): boolean {
-  return isRealSource.value && Boolean(item.image_url)
-}
-
-async function confirmReal(): Promise<void> {
-  const item = selectedItem.value
-  if (!item?.url || realActionPending.value) return
-  realActionPending.value = true
-  try {
-    const saved = await store.selectRealProduct(props.turn.id, item)
-    if (saved) openExternal(item.url)
-  } finally {
-    realActionPending.value = false
-  }
-}
-
-async function cancelReal(): Promise<void> {
-  if (realActionPending.value) return
-  realActionPending.value = true
-  try {
-    await store.cancelRealProduct(props.turn.id)
-  } finally {
-    realActionPending.value = false
-  }
+  return Boolean(item.image_url)
 }
 
 interface HitlSummary {
@@ -110,7 +92,7 @@ interface HitlSummary {
   eta_days: number
   previous_final_price?: number
 }
-// 首轮用所选候选/平台的报价；涨价重确认用锁价后的 draft
+// 首轮使用所选候选的真实源价格；订单草稿由服务端事实构建。
 const summary = computed<HitlSummary | null>(() => {
   if (props.turn.priceRaised && props.turn.draftOrder) {
     const d = props.turn.draftOrder
@@ -122,9 +104,8 @@ const summary = computed<HitlSummary | null>(() => {
       previous_final_price: d.previous_final_price,
     }
   }
-  const q = selectedQuote.value
   const it = selectedItem.value
-  if (q && it) return { title: it.title, platform: q.platform, final_price: q.final_price, eta_days: q.eta_days }
+  if (it) return { title: it.title, platform: it.platform, final_price: it.final_price, eta_days: 0 }
   return null
 })
 
@@ -140,12 +121,6 @@ function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-function origPrice(item: RecommendItem): number | null {
-  const b = bySku.value[item.sku_id]?.best
-  if (!b || b.price === b.final_price) return null
-  return b.price
-}
-
 async function confirm(): Promise<void> {
   await store.resumeHitl(props.turn.id, true, selectedSkuId.value, selectedPlatform.value)
 }
@@ -158,130 +133,112 @@ async function cancel(): Promise<void> {
   <div class="glass" style="animation:rise .3s ease both">
     <div style="padding:20px 20px 0">
       <div class="cand-head">为你找到 {{ rec.items.length }} 款候选</div>
-      <p v-if="rec.summary" class="why" style="margin-top:8px">{{ rec.summary }}</p>
     </div>
 
     <!-- 候选商品卡片（点击埋点） -->
     <div
-      v-for="(item, idx) in rec.items"
+      v-for="item in rec.items"
       :key="item.sku_id"
       class="cand"
-      :class="{ selected: selectedSkuId === item.sku_id }"
+      :class="{ selected: selectedSkuId === item.sku_id && !selectionDisabled, 'selection-disabled': selectionDisabled }"
       @click="selectSku(item)"
     >
       <div class="thumb" :class="{ 'thumb-image': hasImage(item) }">
         <img v-if="hasImage(item)" :src="item.image_url" :alt="item.title" loading="lazy" />
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9z" /><path d="M2 9h20M12 21 8 9l4-6 4 6-4 12" /></svg>
       </div>
-      <div>
-        <h4>
-          {{ item.title }}
-          <span :class="idx === 0 ? 'badge-best' : 'badge-alt'">{{ idx === 0 ? '👍 推荐' : '备选' }}</span>
-        </h4>
+      <div class="cand-content">
+        <div class="cand-title-row">
+          <h4 class="cand-title" :title="item.title">{{ item.title }}</h4>
+          <!-- <span :class="isBestCandidate(item, idx) ? 'badge-best' : 'badge-alt'">{{ isBestCandidate(item, idx) ? '👍 推荐' : '备选' }}</span> -->
+        </div>
         <div class="tags">
+          <span :class="['tag', 'platform-tag', { 'platform-tag-logo': plat(item.platform).logo }]">
+            <img
+              v-if="plat(item.platform).logo"
+              class="platform-mark platform-logo"
+              :src="plat(item.platform).logo"
+              :alt="platName(item.platform) + '标识'"
+            />
+            <span v-else class="platform-mark" :style="{ background: plat(item.platform).bg }" aria-hidden="true">{{ plat(item.platform).short }}</span>
+            <template v-if="!plat(item.platform).logo">{{ platName(item.platform) }}</template>
+          </span>
           <span v-for="(v, k) in item.attributes" :key="k" class="tag">{{ v }}</span>
         </div>
         <div class="price">
           {{ fmt(item.final_price) }}
-          <span v-if="origPrice(item) != null" class="orig">{{ fmt(origPrice(item)) }}</span>
         </div>
-        <div class="why">{{ item.reason }}</div>
+        <a
+          v-if="item.url"
+          class="product-link"
+          :href="item.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="item.url"
+          @click.stop
+        >
+          查看详情>>>
+        </a>
+        <div v-else class="product-link product-link-empty">暂无商品链接</div>
       </div>
     </div>
 
-    <!-- 最优候选多平台比价表 -->
-    <div v-if="activeNormalized && !!selectedSkuId" style="padding:0 20px">
-      <div class="cmp">
-        <div class="cmp-heading">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-          {{ activeNormalized.title }} 多平台比价（SKU 已归一）
-        </div>
-        <table>
-          <thead><tr><th>平台</th><th>标价</th><th>优惠券</th><th>物流（1天折算¥10）</th><th style="text-align:right">到手价</th><th style="text-align:right">综合成本</th></tr></thead>
-          <tbody>
-            <tr v-for="q in activeNormalized.quotes" :key="q.platform" :class="{ best: q.platform === activeNormalized.best.platform }">
-              <td>
-                <div class="plat">
-                  <span class="logo" :style="{ background: plat(q.platform).bg }">{{ plat(q.platform).short }}</span>
-                  {{ platName(q.platform) }}
-                </div>
-              </td>
-              <td>{{ fmt(q.price) }}</td>
-              <td class="diagonal">{{ q.discount ? `-¥${q.discount}` : '—' }}</td>
-              <td>{{ q.eta_days }} 天{{ q.shipping_fee ? ` · 运费¥${q.shipping_fee}` : '' }}</td>
-              <td style="text-align:right">
-                {{ fmt(q.final_price) }}
-              </td>
-              <td style="text-align:right" class="final">
-                {{ fmt(q.total_cost) }}
-                <span v-if="q.platform === activeNormalized.best.platform" class="pill-opt">最优解</span>
-              </td>
-            </tr>
-            <tr v-for="p in degradedList" :key="p" class="dead">
-              <td>
-                <div class="plat">
-                  <span class="logo" :style="{ background: plat(p).bg }">{{ plat(p).short }}</span>
-                  {{ platName(p) }}
-                </div>
-              </td>
-              <td colspan="5" style="text-align:right">该平台暂不可比（熔断降级 · 冷却中）</td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- LLM 的候选横向比较结论，仅展示已验证的结构化字段。 -->
+    <section class="decision-panel" aria-label="候选对比决策">
+      <div class="decision-heading">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <h5>候选对比决策</h5>
       </div>
-    </div>
+      <p v-if="rec.summary" class="decision-summary">{{ displayDecisionText(rec.summary) }}</p>
+      <p v-if="bestItem" class="decision-best">建议优先选择：{{ candidateLabel(bestItem) }} {{ bestItem.title }}</p>
 
-    <!-- 最优候选溯源理由 -->
-    <div v-if="activeItem && !!selectedSkuId" class="reason" style="margin:0 20px">
-      <h5>{{ activeItem.title }} 推荐理由 · 可溯源</h5>
-      <div class="reason-item"><span class="src">理由</span>{{ activeItem.reason }}</div>
-      <div v-if="activeNormalized" class="reason-item">
-        <span class="src">出处</span>
-        {{ platName(activeNormalized.best.platform) }} 标价 {{ fmt(activeNormalized.best.price) }}，到手 {{ fmt(activeNormalized.best.final_price) }}，综合成本 {{ fmt(activeNormalized.best.total_cost) }}
+      <div v-if="rec.price_insights?.length" class="decision-price-insights">
+        <p v-for="insight in rec.price_insights" :key="`${insight.sku_id}:${insight.reference_label}`" class="price-insight">
+          {{ priceInsightText(insight) }}
+        </p>
       </div>
-    </div>
-
-    <!-- 真实源商品选择确认：确认后才打开外链，取消则结束本轮推荐 -->
-    <div v-if="isRealSource" class="hitl">
-      <h3>商品选择确认</h3>
-      <p>选中商品后点击确认，才会打开商品外链。</p>
-      <div class="btn-row">
-        <button class="btn btn-primary" :disabled="realActionPending || !selectedSkuId" @click="confirmReal">
-          {{ realActionPending ? '处理中…' : '确认' }}
-        </button>
-        <button class="btn btn-ghost" :disabled="realActionPending" @click="cancelReal">取消</button>
-      </div>
-    </div>
+    </section>
 
     <!-- HITL 下单确认 -->
-    <div v-if="turn.draftOrder" class="hitl">
+    <div v-if="turn.draftOrder && turn.order?.status !== 'placed' && turn.order?.status !== 'cancelled'" class="hitl">
       <h3>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-        下单确认 · 人工确认（HITL）
+        下单确认
       </h3>
-      <p>点击上方任一候选卡片选中商品，下单前会二次询价锁定价格。</p>
       <div v-if="!turn.priceRaised && !selectedSkuId" class="select-hint">👆 请先点选一款候选商品，再确认下单</div>
 
       <div v-if="summary" class="order-summary">
-        <div class="order-line"><span>{{ summary.title }} ×1</span><span>{{ fmt(summary.final_price) }}</span></div>
+        <div class="order-line"><span>{{ summary.title }}</span><span>{{ fmt(summary.final_price) }}</span></div>
         <div class="order-line"><span>平台</span><span>{{ platName(summary.platform) }}</span></div>
-        <div class="order-line"><span>快递时效</span><span>{{ summary.eta_days }} 天</span></div>
         <div class="order-line total">
           <span>应付合计</span>
-          <span>
-            {{ fmt(summary.final_price) }}
-            <span v-if="priceChange" class="price-change" :class="priceChange.direction">
-              {{ priceChange.direction === 'up' ? '↑' : '↓' }} {{ fmt(priceChange.amount) }}
-            </span>
-          </span>
+          <span>{{ fmt(summary.final_price) }}</span>
         </div>
       </div>
-      <div v-if="turn.priceRaised && turn.order?.status !== 'placed'" class="lock-note show">二次询价发现价格变动，请确认最新到手价后再下单。</div>
       <div v-if="turn.order?.status === 'placed'" class="lock-note show">下单成功 · 订单 #{{ turn.order.order_id }} 已锁定 {{ fmt(turn.order.final_price) }}</div>
       <div v-if="turn.order?.status !== 'placed'" class="btn-row">
         <button class="btn btn-primary" :disabled="turn.streaming || (!turn.priceRaised && !selectedSkuId)" @click="confirm">{{ turn.streaming ? '二次询价中…' : '确认下单' }}</button>
-        <button class="btn btn-ghost" :disabled="turn.streaming" @click="cancel">取消下单</button>
+        <button class="btn btn-ghost" :disabled="turn.streaming" @click="cancel">取消</button>
       </div>
     </div>
+
+    <OrderCard
+      v-if="turn.order?.status === 'placed'"
+      class="transaction-result"
+      :order="turn.order"
+    />
+    <article v-else-if="turn.order?.status === 'cancelled'" class="order-card cancelled-card transaction-result" aria-label="模拟下单已取消">
+      <div class="order-card-head">
+        <div>
+          <div class="order-card-kicker">模拟订单 · 已取消</div>
+          <h3>本次未生成订单</h3>
+        </div>
+        <span class="order-status cancelled-status">已取消</span>
+      </div>
+      <div class="cancelled-card-body">
+        <span class="cancelled-mark" aria-hidden="true">×</span>
+        <p>推荐结果仍保留，你可以继续查看商品详情。</p>
+      </div>
+    </article>
   </div>
 </template>

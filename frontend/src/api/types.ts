@@ -1,22 +1,13 @@
 // SSE 事件负载类型 —— 对应 backend/app/api/chat.py 的 _sse 分帧 与 各节点返回结构
 
-export type SourceMode = 'mock' | 'real'
-
-export interface SourceModes {
-  mock: boolean
-  real: boolean
-}
-
 export interface Preferences {
   category: string | null
   budget: number | null
+  requirements: string | null
+  brand: string | null
+  use_case: string | null
   color: string | null
-  style: string | null
-  material: string | null
-  scene: string | null
-  fit?: string | null
   gender: string | null
-  requirements?: string | null
 }
 
 export interface Candidate {
@@ -30,34 +21,6 @@ export interface Candidate {
   score: number
 }
 
-export interface Coupon {
-  amount: number
-  threshold: number
-}
-
-export interface Quote {
-  platform: string
-  price: number
-  coupon: Coupon | null
-  discount: number
-  shipping_fee: number
-  eta_days: number
-  final_price: number
-  total_cost: number
-}
-
-export interface NormalizedItem {
-  sku_id: string
-  title: string
-  category: string | null
-  attributes: Record<string, string>
-  image_url?: string
-  url?: string
-  quotes: Quote[]
-  best: Quote
-  final_price: number
-}
-
 export interface RecommendItem {
   sku_id: string
   title: string
@@ -67,17 +30,37 @@ export interface RecommendItem {
   image_url?: string
   url?: string
   reason: string
+  evidence_ids?: string[]
+}
+
+export interface PriceInsight {
+  sku_id: string
+  current_price: number
+  reference_label: string
+  reference_price: number
+  reference_kind: 'reference'
+  assessment: 'wait' | 'good_time' | 'neutral'
+  evidence_ids: string[]
 }
 
 export interface Recommendation {
   summary: string
   items: RecommendItem[]
   degraded_sources: string[]
+  best_sku_id?: string | null
+  price_insights?: PriceInsight[]
+  dimensions?: Array<{
+    field: string
+    evidence_by_sku: Record<string, string>
+    values?: Record<string, unknown>
+  }>
 }
 
 export interface DraftOrder {
   sku_id: string
   title: string
+  url?: string
+  catalog_price?: number | null
   platform: string
   price: number
   discount: number
@@ -91,25 +74,42 @@ export interface OrderResult {
   order_id?: number
   conversation_id?: number
   sku_id?: string
+  order_number?: string
+  title?: string
+  category?: string | null
+  image_url?: string | null
+  created_at?: string | null
   platform?: string
   final_price?: number
   status?: string
+  order_intent_id?: string
+  url?: string | null
 }
 
-export interface FunnelOrder {
-  title: string
-  platform: string | null
-  final_price: number | null
-  created_at: string | null
+export interface OrdersPage {
+  items: OrderResult[]
+  total: number
+  page: number
+  page_size: number
+  categories: string[]
 }
 
-export interface FunnelStats {
-  impression: number
-  click: number
-  order: number
-  click_rate: number
-  order_rate: number
-  orders: FunnelOrder[]
+export interface OrderQuery {
+  start_at: string
+  end_at: string
+  label: string
+  keyword?: string | null
+  category?: string | null
+  platform?: string | null
+  query_type: 'search' | 'summary'
+  group_by?: 'category' | 'platform' | null
+}
+
+export interface OrderSummary {
+  order_count: number
+  total_amount: number
+  average_order_amount: number
+  groups: Array<{ key: string; order_count: number; total_amount: number }>
 }
 
 export interface SSEEvent {
@@ -144,6 +144,27 @@ export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
   ts?: number
+  turn_id?: string
+}
+
+export interface RecommendationHistoryEntry {
+  turn_id: string
+  recommendation: Recommendation
+  intro?: string
+}
+
+export interface OrderHistoryEntry {
+  turn_id: string
+  order: OrderResult
+}
+
+export interface OrderQueryHistoryEntry {
+  turn_id: string
+  query: OrderQuery | null
+  results: OrderResult[]
+  summary: OrderSummary | null
+  clarification?: string | null
+  error?: string | null
 }
 
 export interface ConversationDetail {
@@ -151,10 +172,18 @@ export interface ConversationDetail {
   preferences: Preferences
   profile_preferences: ProfilePreferences
   memory_events: MemoryEvent[]
-  normalized: NormalizedItem[]
   recommendation: Recommendation | null
+  recommendation_intro: string
+  recommendation_history: RecommendationHistoryEntry[]
   draft_order: DraftOrder | null
   order: OrderResult | null
+  order_history: OrderHistoryEntry[]
+  order_query_history?: OrderQueryHistoryEntry[]
+  order_query?: OrderQuery | null
+  order_results?: OrderResult[]
+  order_summary?: OrderSummary | null
+  order_clarification?: string | null
+  order_error?: string | null
   price_raised: boolean
   awaiting_hitl: boolean
 }
