@@ -4,6 +4,7 @@
 """
 import json
 import math
+import re
 
 from langchain_core.runnables import RunnableConfig
 
@@ -23,11 +24,20 @@ _SEMANTIC_ORDER = ("gender", "color", "brand", "use_case", "category")
 
 
 def _build_real_query(prefs: dict) -> str:
-    """真实源查询文本：保留功能描述，同时带上可表达的结构化偏好。"""
+    """合并用户需求短语并去重；预算通过独立价格过滤条件传递。"""
+    values = [prefs.get("requirements")]
+    values.extend(prefs.get(key) for key in _SEMANTIC_ORDER)
+
     parts = []
-    if prefs.get("requirements"):
-        parts.append(str(prefs["requirements"]))
-    parts.extend(str(prefs[key]) for key in _SEMANTIC_ORDER if prefs.get(key))
+    seen = set()
+    for value in values:
+        if not value:
+            continue
+        for phrase in re.split(r"[,，、;；]+", str(value)):
+            phrase = re.sub(r"\s+", " ", phrase).strip()
+            if phrase and phrase not in seen:
+                seen.add(phrase)
+                parts.append(phrase)
     return " ".join(parts)
 
 
@@ -74,8 +84,6 @@ def build_real_search_payload(prefs: dict, *, query: str | None = None) -> dict:
         "product_query": query if query is not None else _build_real_query(prefs),
         "size": _TOP_K,
     }
-    if prefs.get("category"):
-        payload["category_name"] = prefs["category"]
     if prefs.get("brand"):
         payload["brand_name"] = prefs["brand"]
     budget = prefs.get("budget")
@@ -148,6 +156,8 @@ def _zhidemai_to_candidates(items: list[dict]) -> list[dict]:
 
 async def retrieve_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     prefs = dict(state.get("preferences") or {})
+    if not str(prefs.get("category") or "").strip() or prefs.get("budget") is None:
+        raise ValueError("商品检索前必须提取品类和预算")
 
     # 值海纳真实源：query 优先按偏好拼，空则退回最新用户原话。
     query = _build_real_query(prefs) or (

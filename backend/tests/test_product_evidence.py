@@ -38,4 +38,18 @@ def test_real_search_payload_requests_three_candidates():
     payload = retrieve.build_real_search_payload({"category": "冲锋衣"})
 
     assert payload["size"] == 3
-    assert payload["category_name"] == "冲锋衣"
+    assert "冲锋衣" in payload["product_query"]
+    assert "category_name" not in payload
+
+
+def test_real_search_payload_deduplicates_needs_and_keeps_budget_separate():
+    payload = retrieve.build_real_search_payload({
+        "category": "显卡",
+        "requirements": "视频剪辑",
+        "use_case": "视频剪辑",
+        "budget": 8000,
+    })
+
+    assert payload["product_query"] == "视频剪辑 显卡"
+    assert payload["max_price"] == 8000
+    assert "category_name" not in payload

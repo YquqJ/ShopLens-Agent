@@ -77,3 +77,21 @@ async def test_repeated_clarification_asks_only_missing_field(monkeypatch) -> No
 
     assert result["needs_action"] == "shopping"
     assert result["clarify_question"] == ""
+
+
+@pytest.mark.anyio
+async def test_clarify_does_not_release_search_when_budget_is_missing_at_round_limit(monkeypatch) -> None:
+    structured = _Structured({}, question="请问您的预算是多少？")
+    monkeypatch.setattr(clarify, "get_structured_llm", lambda *_args: structured)
+
+    result = await clarify.clarify_node({
+        "messages": [HumanMessage("用于视频剪辑")],
+        "preferences": {"category": "显卡", "use_case": "视频剪辑"},
+        "clarify_question": "预算大概多少？",
+        "hop_count": clarify.MAX_CLARIFY_ROUNDS - 1,
+    })
+
+    assert result["needs_action"] == "clarify"
+    assert result["trace_preferences"]["category"] == "显卡"
+    assert result["trace_preferences"].get("budget") is None
+    assert "预算" in result["clarify_question"]

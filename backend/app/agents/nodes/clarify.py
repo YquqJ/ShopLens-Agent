@@ -52,7 +52,7 @@ _COLOR_TERMS = (
     "深蓝", "浅蓝", "米色", "卡其",
 )
 _GENDER_TERMS = ("男款", "女款", "中性款", "中性", "男士", "女士")
-# 追问轮次上限：达到上限后按已确认需求继续检索，避免缺字段时无限追问。
+# 追问轮次上限：达到上限后只追问缺失的必填字段。
 MAX_CLARIFY_ROUNDS = 3
 
 _BUDGET_KEYWORD_RE = re.compile(r"(?:预算|价位|价格)\s*[:：]?\s*(\d{2,6}(?:\.\d+)?)")
@@ -71,7 +71,7 @@ def normalize_preferences(raw: dict) -> dict:
 def _missing(prefs: dict) -> list[str]:
     """Fields required before searching any product category."""
     missing = []
-    if not prefs.get("category"):
+    if not str(prefs.get("category") or "").strip():
         missing.append("想买什么商品")
     if prefs.get("budget") is None:
         missing.append("预算大概多少")
@@ -234,13 +234,17 @@ async def clarify_node(state: AgentState) -> dict:
         "hop_count": rounds,
         "optional_clarify_asked": optional_asked,
     }
-    if needs and rounds < MAX_CLARIFY_ROUNDS:
+    if needs:
         update["needs_action"] = "clarify"
-        question = _clarify_question(result.clarify_question, merged, previous_question) or _default_question(merged)
+        if rounds < MAX_CLARIFY_ROUNDS:
+            question = _clarify_question(result.clarify_question, merged, previous_question)
+        else:
+            question = _missing_question(merged)
+        question = question or _default_question(merged)
         update["clarify_question"] = question
         update["messages"] = [AIMessage(question)]
     else:
-        # 关键信息仍缺失但已达追问上限：按已确认条件继续检索，避免死循环。
+        # 只有品类和预算齐备才进入检索。
         update["needs_action"] = "shopping"
         # 刚回答完上一轮追问时不再追加可选问题，避免「问完一个又问一个」的连环追问。
         question = "" if (optional_asked or needs or previous_question) else _optional_question(merged)

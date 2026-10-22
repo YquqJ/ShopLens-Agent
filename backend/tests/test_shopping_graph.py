@@ -23,6 +23,23 @@ async def test_retrieval_without_haina_tool_fails_explicitly():
         )
 
 
+@pytest.mark.parametrize(
+    "preferences",
+    [
+        {"category": "显卡"},
+        {"budget": 8000},
+        {},
+    ],
+)
+@pytest.mark.anyio
+async def test_retrieval_requires_category_and_budget(preferences):
+    with pytest.raises(ValueError, match="品类和预算"):
+        await retrieve.retrieve_node(
+            {"preferences": preferences, "messages": []},
+            {"configurable": {"mcp_tools": {}}},
+        )
+
+
 def test_initial_state_has_evidence_and_comparison_fields():
     state = initial_state("买手机")
     assert state["product_evidence"] == {}
